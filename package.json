@@ -1,0 +1,63 @@
+{
+  "name": "git-list",
+  "displayName": "%git-list.displayName%",
+  "description": "%git-list.description%",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:gitListView"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "git-list",
+          "title": "%git-list.viewContainer.title%",
+          "icon": "media/git-list.svg"
+        }
+      ]
+    },
+    "views": {
+      "git-list": [
+        {
+          "id": "gitListView",
+          "name": "%git-list.view.name%",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "gitList.refresh",
+        "title": "%git-list.command.refresh%",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "gitList.refresh",
+          "when": "view == gitListView",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}

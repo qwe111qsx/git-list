@@ -1,0 +1,9 @@
+---
+description: 不生成 Markdown 说明；回复与注释保持简短
+alwaysApply: true
+---
+
+# 文档与表述
+
+- 除非用户明确要求，不要新建或补充 `README`、`CHANGELOG`、`*.md` 等说明文档。
+- 用代码与必要注释解决问题；向用户的说明尽量简短、直接。

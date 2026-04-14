@@ -1,0 +1,7 @@
+{
+  "git-list.displayName": "Git List",
+  "git-list.description": "在侧栏展示提交与贮藏列表。",
+  "git-list.viewContainer.title": "Git List",
+  "git-list.view.name": "Git List",
+  "git-list.command.refresh": "刷新"
+}
