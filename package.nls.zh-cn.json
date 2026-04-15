@@ -2,8 +2,16 @@
   "git-list.viewContainer.title": "Git List",
   "git-list.view.name": "Git List",
   "git-list.command.refresh": "刷新",
+  "git-list.command.refreshCommits": "刷新提交列表",
+  "git-list.command.refreshStash": "刷新贮藏列表",
+  "git-list.command.refreshBranches": "刷新分支列表",
   "git-list.command.clearAuthorColors": "Git List: 清除已保存的作者图标颜色",
+  "git-list.command.createBranchFromCommit": "从该提交创建分支…",
+  "git-list.command.applyStash": "应用贮藏",
+  "git-list.command.dropStash": "删除贮藏…",
+  "git-list.command.deleteBranch": "删除分支…",
   "git-list.config.title": "Git List",
   "git-list.config.commitsPageSize": "首次展开 Commits 与每次「加载更多」时获取的提交条数。",
-  "git-list.config.stashPageSize": "首次展开 Stash 与每次「加载更多」时获取的贮藏条数。"
+  "git-list.config.stashPageSize": "首次展开 Stash 与每次「加载更多」时获取的贮藏条数。",
+  "git-list.config.branchesPageSize": "首次展开 Branches 与每次「加载更多」时列出的本地分支条数。"
 }

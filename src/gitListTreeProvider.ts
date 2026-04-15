@@ -5,6 +5,14 @@ import { getAuthorAccountIconUri } from "./authorStyles";
 
 const execFileAsync = promisify(execFile);
 
+/** TreeItem 类型将 collapsibleState 标为 readonly，运行时可改；刷新列表时需与侧栏展开态一致。 */
+function setTreeItemCollapsible(
+  item: vscode.TreeItem,
+  state: vscode.TreeItemCollapsibleState
+): void {
+  (item as { collapsibleState: vscode.TreeItemCollapsibleState }).collapsibleState = state;
+}
+
 function clampCommitsStashPageSize(n: unknown): number {
   const x = Math.floor(Number(n));
   if (!Number.isFinite(x) || x < 1) {
@@ -23,17 +31,26 @@ function readStashPageSize(): number {
   return clampCommitsStashPageSize(v);
 }
 
+function readBranchesPageSize(): number {
+  const v = vscode.workspace.getConfiguration("git-list").get<number>("branchesPageSize", 40);
+  return clampCommitsStashPageSize(v);
+}
+
 /** 单次提交/stash 下列出的最大文件数（避免超大 patch 卡 UI）。 */
 const MAX_PATCH_FILES = 400;
 
 /** 树节点类型：分组、提交/贮藏、变更文件叶子、提示、加载更多。 */
 type NodeKind =
+  | "sectionBranches"
   | "sectionCommits"
   | "sectionStash"
+  | "branch"
   | "commit"
   | "stash"
   | "info"
   | "loadMoreCommits"
+  | "loadMoreBranchCommits"
+  | "loadMoreBranches"
   | "loadMoreStash"
   | "patchFile"
   | "patchFolder";
@@ -67,17 +84,22 @@ export class GitListTreeItem extends vscode.TreeItem {
     label: string,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
     public readonly hash?: string,
-    public readonly stashRef?: string,
+    public stashRef?: string,
     public readonly repoRoot?: string,
     public readonly relPath?: string,
     public readonly changeKind?: PatchChangeKind,
     public readonly commitMeta?: CommitListMeta,
     public readonly commitAccountIcon?: vscode.Uri,
     public readonly stashMeta?: StashListMeta,
-    public readonly patchFolderChildren?: GitListTreeItem[]
+    public readonly patchFolderChildren?: GitListTreeItem[],
+    public readonly branchName?: string
   ) {
     super(label, collapsibleState);
     if (kind === "commit") {
+      this.contextValue = "gitListCommit";
+      if (commitMeta?.fullHash) {
+        this.id = commitMeta.fullHash;
+      }
       this.iconPath =
         commitAccountIcon ?? new vscode.ThemeIcon("account");
       if (hash && commitMeta) {
@@ -88,7 +110,11 @@ export class GitListTreeItem extends vscode.TreeItem {
         this.tooltip = `${hash} — ${label}`;
       }
     } else if (kind === "stash") {
+      this.contextValue = "gitListStash";
       this.iconPath = new vscode.ThemeIcon("git-stash");
+      if (hash) {
+        this.id = hash;
+      }
       if (stashMeta) {
         const br = stashMeta.branch.trim();
         const t = formatCommitListDate(stashMeta.dateIso);
@@ -97,20 +123,44 @@ export class GitListTreeItem extends vscode.TreeItem {
       if (stashRef) {
         this.tooltip = `${stashRef} — ${label}`;
       }
+    } else if (kind === "sectionBranches") {
+      this.iconPath = new vscode.ThemeIcon("git-branch");
+      this.contextValue = "gitListSectionBranches";
+    } else if (kind === "branch") {
+      this.iconPath = new vscode.ThemeIcon("git-branch");
+      this.contextValue = "gitListBranch";
+      if (branchName) {
+        this.id = `gitList-branch:${branchName}`;
+      }
     } else if (kind === "sectionCommits") {
       this.iconPath = new vscode.ThemeIcon("history");
+      this.contextValue = "gitListSectionCommits";
     } else if (kind === "sectionStash") {
       this.iconPath = new vscode.ThemeIcon("inbox");
+      this.contextValue = "gitListSectionStash";
     } else if (kind === "loadMoreCommits") {
       this.iconPath = undefined;
       this.command = {
         command: "gitList.loadMoreCommits",
         title: vscode.l10n.t("gitList.loadMoreCommand"),
       };
+    } else if (kind === "loadMoreBranchCommits") {
+      this.iconPath = undefined;
+      this.command = {
+        command: "gitList.loadMoreBranchCommits",
+        title: vscode.l10n.t("gitList.loadMoreCommand"),
+        arguments: [this],
+      };
     } else if (kind === "loadMoreStash") {
       this.iconPath = undefined;
       this.command = {
         command: "gitList.loadMoreStashes",
+        title: vscode.l10n.t("gitList.loadMoreCommand"),
+      };
+    } else if (kind === "loadMoreBranches") {
+      this.iconPath = undefined;
+      this.command = {
+        command: "gitList.loadMoreBranches",
         title: vscode.l10n.t("gitList.loadMoreCommand"),
       };
     } else if (kind === "patchFolder") {
@@ -160,16 +210,137 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
 
   private commitLimit: number;
   private stashLimit: number;
+  /** 侧栏 Branches 分区下列出的本地分支条数上限（首次展开与每次「加载更多」递增）。 */
+  private branchesListLimit: number;
+
+  /** 分支名 -> 该分支下列表分页上限（与 commitLimit 同理，按分支独立）。 */
+  private readonly branchCommitLimits = new Map<string, number>();
+  /** 分支行节点稳定引用，便于仅刷新某一分支下的提交子树。 */
+  private readonly branchRowByName = new Map<string, GitListTreeItem>();
+  /** 按 stash 提交 tip 复用行节点，避免刷新后丢失展开态。 */
+  private readonly stashRowByTip = new Map<string, GitListTreeItem>();
+  /** 与 TreeView 同步：用户展开过的节点，重建时用 Expanded。 */
+  private readonly expandedStashTipHashes = new Set<string>();
+  private readonly expandedBranchNames = new Set<string>();
+  private readonly expandedCommitFullHashes = new Set<string>();
+
+  /** 根级分区节点固定引用，便于 `onDidChangeTreeData.fire(element)` 只刷新对应子树。 */
+  private readonly rootSectionBranches = new GitListTreeItem(
+    "sectionBranches",
+    "Branches (0)",
+    vscode.TreeItemCollapsibleState.Collapsed
+  );
+  private readonly rootSectionCommits = new GitListTreeItem(
+    "sectionCommits",
+    "Commits",
+    vscode.TreeItemCollapsibleState.Collapsed
+  );
+  private readonly rootSectionStash = new GitListTreeItem(
+    "sectionStash",
+    "Stash (0)",
+    vscode.TreeItemCollapsibleState.Collapsed
+  );
 
   constructor(private readonly extContext: vscode.ExtensionContext) {
     this.commitLimit = readCommitsPageSize();
     this.stashLimit = readStashPageSize();
+    this.branchesListLimit = readBranchesPageSize();
+  }
+
+  /** 与侧栏 TreeView 联动，删除/刷新后仍按记忆恢复展开。 */
+  onViewTreeElementExpanded(element: vscode.TreeItem): void {
+    if (!(element instanceof GitListTreeItem)) {
+      return;
+    }
+    const el = element;
+    switch (el.kind) {
+      case "sectionStash":
+        setTreeItemCollapsible(this.rootSectionStash, vscode.TreeItemCollapsibleState.Expanded);
+        break;
+      case "sectionBranches":
+        setTreeItemCollapsible(this.rootSectionBranches, vscode.TreeItemCollapsibleState.Expanded);
+        break;
+      case "sectionCommits":
+        setTreeItemCollapsible(this.rootSectionCommits, vscode.TreeItemCollapsibleState.Expanded);
+        break;
+      case "stash":
+        if (el.hash) {
+          this.expandedStashTipHashes.add(el.hash);
+        }
+        setTreeItemCollapsible(el, vscode.TreeItemCollapsibleState.Expanded);
+        break;
+      case "branch":
+        if (el.branchName) {
+          this.expandedBranchNames.add(el.branchName);
+        }
+        setTreeItemCollapsible(el, vscode.TreeItemCollapsibleState.Expanded);
+        break;
+      case "commit":
+        if (el.commitMeta?.fullHash) {
+          this.expandedCommitFullHashes.add(el.commitMeta.fullHash);
+        }
+        setTreeItemCollapsible(el, vscode.TreeItemCollapsibleState.Expanded);
+        break;
+      default:
+        break;
+    }
+  }
+
+  onViewTreeElementCollapsed(element: vscode.TreeItem): void {
+    if (!(element instanceof GitListTreeItem)) {
+      return;
+    }
+    const el = element;
+    switch (el.kind) {
+      case "sectionStash":
+        setTreeItemCollapsible(this.rootSectionStash, vscode.TreeItemCollapsibleState.Collapsed);
+        break;
+      case "sectionBranches":
+        setTreeItemCollapsible(this.rootSectionBranches, vscode.TreeItemCollapsibleState.Collapsed);
+        break;
+      case "sectionCommits":
+        setTreeItemCollapsible(this.rootSectionCommits, vscode.TreeItemCollapsibleState.Collapsed);
+        break;
+      case "stash":
+        if (el.hash) {
+          this.expandedStashTipHashes.delete(el.hash);
+        }
+        setTreeItemCollapsible(el, vscode.TreeItemCollapsibleState.Collapsed);
+        break;
+      case "branch":
+        if (el.branchName) {
+          this.expandedBranchNames.delete(el.branchName);
+        }
+        setTreeItemCollapsible(el, vscode.TreeItemCollapsibleState.Collapsed);
+        break;
+      case "commit":
+        if (el.commitMeta?.fullHash) {
+          this.expandedCommitFullHashes.delete(el.commitMeta.fullHash);
+        }
+        setTreeItemCollapsible(el, vscode.TreeItemCollapsibleState.Collapsed);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private resetTrackedTreeExpansion(): void {
+    this.expandedStashTipHashes.clear();
+    this.expandedBranchNames.clear();
+    this.expandedCommitFullHashes.clear();
+    this.stashRowByTip.clear();
+    setTreeItemCollapsible(this.rootSectionStash, vscode.TreeItemCollapsibleState.Collapsed);
+    setTreeItemCollapsible(this.rootSectionBranches, vscode.TreeItemCollapsibleState.Collapsed);
+    setTreeItemCollapsible(this.rootSectionCommits, vscode.TreeItemCollapsibleState.Collapsed);
   }
 
   refresh(): void {
     this.commitLimit = readCommitsPageSize();
     this.stashLimit = readStashPageSize();
+    this.branchesListLimit = readBranchesPageSize();
+    this.branchCommitLimits.clear();
     this.diffCache.clear();
+    this.resetTrackedTreeExpansion();
     this._onDidChangeTreeData.fire();
   }
 
@@ -177,18 +348,223 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
   onGitListConfigurationChanged(): void {
     this.commitLimit = readCommitsPageSize();
     this.stashLimit = readStashPageSize();
+    this.branchesListLimit = readBranchesPageSize();
+    this.branchCommitLimits.clear();
     this.diffCache.clear();
+    this.resetTrackedTreeExpansion();
     this._onDidChangeTreeData.fire();
   }
 
   loadMoreCommits(): void {
     this.commitLimit += readCommitsPageSize();
-    this._onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire(this.rootSectionCommits);
   }
 
   loadMoreStashes(): void {
     this.stashLimit += readStashPageSize();
-    this._onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire(this.rootSectionStash);
+  }
+
+  loadMoreBranches(): void {
+    this.branchesListLimit += readBranchesPageSize();
+    this._onDidChangeTreeData.fire(this.rootSectionBranches);
+  }
+
+  loadMoreBranchCommits(item: GitListTreeItem): void {
+    if (item.kind !== "loadMoreBranchCommits" || !item.branchName) {
+      return;
+    }
+    const name = item.branchName;
+    const page = readCommitsPageSize();
+    const next = (this.branchCommitLimits.get(name) ?? page) + page;
+    this.branchCommitLimits.set(name, next);
+    const row = this.branchRowByName.get(name);
+    if (row) {
+      this._onDidChangeTreeData.fire(row);
+    } else {
+      this._onDidChangeTreeData.fire(this.rootSectionBranches);
+    }
+  }
+
+  private getBranchCommitLimit(branchName: string): number {
+    return this.branchCommitLimits.get(branchName) ?? readCommitsPageSize();
+  }
+
+  /** 重置分支列表分页，仅刷新 Branches 分区。 */
+  refreshBranchesList(): void {
+    this.branchCommitLimits.clear();
+    this.branchesListLimit = readBranchesPageSize();
+    void (async () => {
+      const wr = getWorkspaceRoot();
+      const r = wr ? await getGitRoot(wr) : undefined;
+      await this.syncSectionCountLabels(r);
+      this._onDidChangeTreeData.fire(this.rootSectionBranches);
+    })();
+  }
+
+  /** 删除分支后：不重置分页、不刷新其它分区，仅更新数量并刷新 Branches 子树。 */
+  notifyBranchDeleted(branchName: string): void {
+    this.expandedBranchNames.delete(branchName);
+    this.branchRowByName.delete(branchName);
+    void (async () => {
+      const wr = getWorkspaceRoot();
+      const r = wr ? await getGitRoot(wr) : undefined;
+      await this.syncSectionCountLabels(r);
+      this._onDidChangeTreeData.fire(this.rootSectionBranches);
+    })();
+  }
+
+  /** 更新 Branches / Stash 根节点标题中的数量（与仓库实际一致）。 */
+  private async syncSectionCountLabels(repo: string | undefined): Promise<void> {
+    if (!repo) {
+      this.rootSectionBranches.label = "Branches (0)";
+      this.rootSectionStash.label = "Stash (0)";
+      return;
+    }
+    const [b, s] = await Promise.all([countBranchesInRepo(repo), countStashesInRepo(repo)]);
+    this.rootSectionBranches.label = `Branches (${b})`;
+    this.rootSectionStash.label = `Stash (${s})`;
+  }
+
+  /** 重置提交列表分页并清除提交 diff 缓存，仅刷新 Commits 分区。 */
+  refreshCommitsList(): void {
+    this.commitLimit = readCommitsPageSize();
+    for (const key of [...this.diffCache.keys()]) {
+      if (key.startsWith("commit:")) {
+        this.diffCache.delete(key);
+      }
+    }
+    this._onDidChangeTreeData.fire(this.rootSectionCommits);
+  }
+
+  /** 重置贮藏列表分页并清除 stash diff 缓存，仅刷新 Stash 分区。 */
+  refreshStashList(): void {
+    this.stashLimit = readStashPageSize();
+    this.stashRowByTip.clear();
+    for (const key of [...this.diffCache.keys()]) {
+      if (key.startsWith("stash:")) {
+        this.diffCache.delete(key);
+      }
+    }
+    void (async () => {
+      const wr = getWorkspaceRoot();
+      const r = wr ? await getGitRoot(wr) : undefined;
+      await this.syncSectionCountLabels(r);
+      this._onDidChangeTreeData.fire(this.rootSectionStash);
+    })();
+  }
+
+  /** 删除一条 stash 后：保留当前「加载更多」进度，仅去掉该条 diff 缓存、更新数量并刷新 Stash 子树。 */
+  notifyStashDropped(stashRef: string, tipHash?: string): void {
+    this.diffCache.delete(`stash:${stashRef}`);
+    if (tipHash) {
+      this.expandedStashTipHashes.delete(tipHash);
+      this.stashRowByTip.delete(tipHash);
+    }
+    void (async () => {
+      const wr = getWorkspaceRoot();
+      const r = wr ? await getGitRoot(wr) : undefined;
+      await this.syncSectionCountLabels(r);
+      this._onDidChangeTreeData.fire(this.rootSectionStash);
+    })();
+  }
+
+  private async loadStashList(
+    repo: string,
+    displayLimit: number,
+    pageSizeForLabel: number
+  ): Promise<GitListTreeItem[]> {
+    try {
+      const fetchCount = String(displayLimit + 1);
+      let stdout: string;
+      try {
+        const out = await execFileAsync(
+          "git",
+          [
+            "log",
+            "-g",
+            "--max-count",
+            fetchCount,
+            "refs/stash",
+            "--pretty=format:%H%x1f%gd%x1f%ai%x1f%gs",
+          ],
+          { cwd: repo, maxBuffer: 1024 * 1024 }
+        );
+        stdout = out.stdout;
+      } catch {
+        this.stashRowByTip.clear();
+        return [
+          new GitListTreeItem("info", "(No stashes)", vscode.TreeItemCollapsibleState.None),
+        ];
+      }
+      const lines = stdout.split(/\r?\n/).filter((l) => l.length > 0);
+      if (lines.length === 0) {
+        this.stashRowByTip.clear();
+        return [
+          new GitListTreeItem("info", "(No stashes)", vscode.TreeItemCollapsibleState.None),
+        ];
+      }
+      const hasMore = lines.length > displayLimit;
+      const slice = hasMore ? lines.slice(0, displayLimit) : lines;
+      const seenTips = new Set<string>();
+      const items: GitListTreeItem[] = [];
+      for (const line of slice) {
+        const parts = line.split("\x1f");
+        const tipHash = parts[0] ?? "";
+        const ref = parts[1] ?? line;
+        const dateIso = parts[2] ?? "";
+        const gs = parts.slice(3).join("\x1f");
+        if (!tipHash) {
+          continue;
+        }
+        seenTips.add(tipHash);
+        const branch = parseStashBranchFromGs(gs);
+        const label = stashDisplayLabel(gs) || ref;
+        const meta: StashListMeta = { branch, dateIso };
+        const expanded = this.expandedStashTipHashes.has(tipHash);
+        const coll = expanded
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed;
+        let row = this.stashRowByTip.get(tipHash);
+        if (!row) {
+          row = new GitListTreeItem(
+            "stash",
+            label,
+            coll,
+            tipHash,
+            ref,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            meta
+          );
+          this.stashRowByTip.set(tipHash, row);
+        } else {
+          applyStashRowListFields(row, label, ref, meta);
+          setTreeItemCollapsible(row, coll);
+        }
+        items.push(row);
+      }
+      for (const key of [...this.stashRowByTip.keys()]) {
+        if (!seenTips.has(key)) {
+          this.stashRowByTip.delete(key);
+        }
+      }
+      if (hasMore) {
+        items.push(
+          new GitListTreeItem(
+            "loadMoreStash",
+            vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
+            vscode.TreeItemCollapsibleState.None
+          )
+        );
+      }
+      return items;
+    } catch {
+      return [emptyLeaf("Failed to read git stash list.")];
+    }
   }
 
   getTreeItem(element: GitListTreeItem): vscode.TreeItem {
@@ -198,39 +574,56 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
   async getChildren(element?: GitListTreeItem): Promise<GitListTreeItem[]> {
     const root = getWorkspaceRoot();
     if (!root) {
-      return [
-        new GitListTreeItem(
-          "sectionCommits",
-          "Commits",
-          vscode.TreeItemCollapsibleState.Collapsed
-        ),
-        new GitListTreeItem("sectionStash", "Stash", vscode.TreeItemCollapsibleState.Collapsed),
-      ];
+      await this.syncSectionCountLabels(undefined);
+      return [this.rootSectionCommits, this.rootSectionBranches, this.rootSectionStash];
     }
 
     const repo = await getGitRoot(root);
     if (!element) {
-      return [
-        new GitListTreeItem(
-          "sectionCommits",
-          "Commits",
-          vscode.TreeItemCollapsibleState.Collapsed
-        ),
-        new GitListTreeItem("sectionStash", "Stash", vscode.TreeItemCollapsibleState.Collapsed),
-      ];
+      await this.syncSectionCountLabels(repo);
+      return [this.rootSectionCommits, this.rootSectionBranches, this.rootSectionStash];
     }
 
+    if (element.kind === "sectionBranches") {
+      if (!repo) {
+        return [emptyLeaf("No Git repository found.")];
+      }
+      return this.loadBranchRows(repo);
+    }
+    if (element.kind === "branch" && element.branchName) {
+      if (!repo) {
+        return [emptyLeaf("No Git repository found.")];
+      }
+      const limit = this.getBranchCommitLimit(element.branchName);
+      return loadCommits(
+        this.extContext,
+        repo,
+        limit,
+        readCommitsPageSize(),
+        element.branchName,
+        element.branchName,
+        this.expandedCommitFullHashes
+      );
+    }
     if (element.kind === "sectionCommits") {
       if (!repo) {
         return [emptyLeaf("No Git repository found.")];
       }
-      return loadCommits(this.extContext, repo, this.commitLimit, readCommitsPageSize());
+      return loadCommits(
+        this.extContext,
+        repo,
+        this.commitLimit,
+        readCommitsPageSize(),
+        undefined,
+        undefined,
+        this.expandedCommitFullHashes
+      );
     }
     if (element.kind === "sectionStash") {
       if (!repo) {
         return [emptyLeaf("No Git repository found.")];
       }
-      return loadStash(repo, this.stashLimit, readStashPageSize());
+      return this.loadStashList(repo, this.stashLimit, readStashPageSize());
     }
     if (element.kind === "commit" && element.hash) {
       if (!repo) {
@@ -248,6 +641,69 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       return element.patchFolderChildren ?? [];
     }
     return [];
+  }
+
+  private async loadBranchRows(repo: string): Promise<GitListTreeItem[]> {
+    const rows = await listLocalBranches(repo);
+    if (rows.length === 0) {
+      for (const key of this.branchRowByName.keys()) {
+        this.branchRowByName.delete(key);
+      }
+      return [emptyLeaf("(No branches)")];
+    }
+    const seen = new Set(rows.map((r) => r.name));
+    for (const key of [...this.branchRowByName.keys()]) {
+      if (!seen.has(key)) {
+        this.branchRowByName.delete(key);
+      }
+    }
+    const limit = Math.min(this.branchesListLimit, rows.length);
+    const visible = rows.slice(0, limit);
+    const pageLabel = readBranchesPageSize();
+    const items: GitListTreeItem[] = [];
+    for (const row of visible) {
+      let item = this.branchRowByName.get(row.name);
+      if (!item) {
+        item = new GitListTreeItem(
+          "branch",
+          row.name,
+          vscode.TreeItemCollapsibleState.Collapsed,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          row.name
+        );
+        this.branchRowByName.set(row.name, item);
+      }
+      setTreeItemCollapsible(
+        item,
+        this.expandedBranchNames.has(row.name)
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed
+      );
+      item.description = formatBranchTipDate(row.dateIso);
+      const tip = new vscode.MarkdownString();
+      tip.appendMarkdown(`**${row.name}**\n\n\`${row.dateIso}\``);
+      tip.isTrusted = false;
+      item.tooltip = tip;
+      items.push(item);
+    }
+    if (rows.length > limit) {
+      items.push(
+        new GitListTreeItem(
+          "loadMoreBranches",
+          vscode.l10n.t("gitList.loadMoreBatch", String(pageLabel)),
+          vscode.TreeItemCollapsibleState.None
+        )
+      );
+    }
+    return items;
   }
 
   private async getCommitPatchFiles(repo: string, hash: string): Promise<GitListTreeItem[]> {
@@ -464,6 +920,15 @@ function getWorkspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
+/** 当前工作区首文件夹对应的 Git 仓库根（与侧栏列表一致）。 */
+export async function resolveWorkspaceGitRoot(): Promise<string | undefined> {
+  const wr = getWorkspaceRoot();
+  if (!wr) {
+    return undefined;
+  }
+  return getGitRoot(wr);
+}
+
 async function getGitRoot(cwd: string): Promise<string | undefined> {
   try {
     const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
@@ -663,7 +1128,7 @@ function buildPatchLevel(
       new GitListTreeItem(
         "patchFolder",
         d,
-        vscode.TreeItemCollapsibleState.Collapsed,
+        vscode.TreeItemCollapsibleState.Expanded,
         hash,
         stashRef,
         repo,
@@ -745,25 +1210,169 @@ function stashDisplayLabel(gs: string): string {
   return rest || gs;
 }
 
+function parseBranchLines(stdout: string, delim: string): { name: string; dateIso: string }[] {
+  const out: { name: string; dateIso: string }[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+    const i = line.indexOf(delim);
+    if (i < 0) {
+      const name = line.trim();
+      if (name) {
+        out.push({ name, dateIso: "" });
+      }
+      continue;
+    }
+    const name = line.slice(0, i).trim();
+    const dateIso = line.slice(i + 1).trim();
+    if (name) {
+      out.push({ name, dateIso });
+    }
+  }
+  return out;
+}
+
+async function listLocalBranches(repo: string): Promise<{ name: string; dateIso: string }[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      [
+        "for-each-ref",
+        "refs/heads",
+        "--sort=-committerdate",
+        "--format=%(refname:short)\t%(committerdate:iso)",
+      ],
+      { cwd: repo, maxBuffer: 1024 * 1024 }
+    );
+    const parsed = parseBranchLines(stdout, "\t");
+    if (parsed.length > 0) {
+      return parsed;
+    }
+  } catch {
+    /* try fallbacks */
+  }
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      [
+        "for-each-ref",
+        "refs/heads",
+        "--sort=-committerdate",
+        "--format=%(refname:short)",
+      ],
+      { cwd: repo, maxBuffer: 1024 * 1024 }
+    );
+    const parsed = parseBranchLines(stdout, "\t");
+    if (parsed.length > 0) {
+      return parsed;
+    }
+  } catch {
+    /* last resort */
+  }
+  try {
+    const { stdout } = await execFileAsync("git", ["branch", "--list"], {
+      cwd: repo,
+      maxBuffer: 1024 * 1024,
+    });
+    const out: { name: string; dateIso: string }[] = [];
+    for (const line of stdout.split(/\r?\n/)) {
+      const m = line.match(/^\*?\s*(.+?)\s*$/);
+      const name = m?.[1]?.trim();
+      if (name) {
+        out.push({ name, dateIso: "" });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function countBranchesInRepo(repo: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["for-each-ref", "--count", "refs/heads"],
+      { cwd: repo, maxBuffer: 64 * 1024 }
+    );
+    const n = parseInt(stdout.trim(), 10);
+    if (Number.isFinite(n)) {
+      return n;
+    }
+  } catch {
+    /* fall through */
+  }
+  return (await listLocalBranches(repo)).length;
+}
+
+async function countStashesInRepo(repo: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync("git", ["stash", "list"], {
+      cwd: repo,
+      maxBuffer: 1024 * 1024,
+    });
+    return stdout.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
+  } catch {
+    return 0;
+  }
+}
+
+function formatBranchTipDate(iso: string): string {
+  const s = iso.trim().replace("T", " ");
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+  if (m) {
+    return `${m[1]} ${m[2]}`;
+  }
+  return iso.trim();
+}
+
+function applyStashRowListFields(
+  item: GitListTreeItem,
+  label: string,
+  stashRef: string,
+  meta: StashListMeta
+): void {
+  item.label = label;
+  item.stashRef = stashRef;
+  const br = meta.branch.trim();
+  const t = formatCommitListDate(meta.dateIso);
+  item.description = br ? `${br} · ${t}` : t;
+  item.tooltip = `${stashRef} — ${label}`;
+}
+
+/** @param logRevision 传入时等价于 `git log <rev>`；否则为当前 HEAD。 @param loadMoreForBranch 有值时「加载更多」走分支分页。 */
 async function loadCommits(
   context: vscode.ExtensionContext,
   repo: string,
   displayLimit: number,
-  pageSizeForLabel: number
+  pageSizeForLabel: number,
+  logRevision?: string,
+  loadMoreForBranch?: string,
+  commitExpanded?: Set<string>
 ): Promise<GitListTreeItem[]> {
   try {
     const fetchCount = String(displayLimit + 1);
-    const { stdout } = await execFileAsync(
-      "git",
-      [
-        "log",
-        "-n",
-        fetchCount,
-        "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
-        "--numstat",
-      ],
-      { cwd: repo, maxBuffer: 10 * 1024 * 1024 }
-    );
+    const logArgs = logRevision
+      ? [
+          "log",
+          logRevision,
+          "-n",
+          fetchCount,
+          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+          "--numstat",
+        ]
+      : [
+          "log",
+          "-n",
+          fetchCount,
+          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+          "--numstat",
+        ];
+    const { stdout } = await execFileAsync("git", logArgs, {
+      cwd: repo,
+      maxBuffer: 10 * 1024 * 1024,
+    });
     const parsed = parseGitLogWithNumstat(stdout);
     if (parsed.length === 0) {
       return [emptyLeaf("(No commits)")];
@@ -784,10 +1393,14 @@ async function loadCommits(
         binaryFiles: rec.binaryFiles,
       };
       const icon = getAuthorAccountIconUri(context, rec.authorEmail, rec.author);
+      const commitColl =
+        commitExpanded?.has(rec.fullHash) === true
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed;
       return new GitListTreeItem(
         "commit",
         rec.subject || rec.hash,
-        vscode.TreeItemCollapsibleState.Collapsed,
+        commitColl,
         rec.hash,
         undefined,
         undefined,
@@ -798,87 +1411,36 @@ async function loadCommits(
       );
     });
     if (hasMore) {
-      items.push(
-        new GitListTreeItem(
-          "loadMoreCommits",
-          vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
-          vscode.TreeItemCollapsibleState.None
-        )
-      );
+      if (loadMoreForBranch) {
+        items.push(
+          new GitListTreeItem(
+            "loadMoreBranchCommits",
+            vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
+            vscode.TreeItemCollapsibleState.None,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            loadMoreForBranch
+          )
+        );
+      } else {
+        items.push(
+          new GitListTreeItem(
+            "loadMoreCommits",
+            vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
+            vscode.TreeItemCollapsibleState.None
+          )
+        );
+      }
     }
     return items;
   } catch {
     return [emptyLeaf("Failed to read git log.")];
-  }
-}
-
-async function loadStash(
-  repo: string,
-  displayLimit: number,
-  pageSizeForLabel: number
-): Promise<GitListTreeItem[]> {
-  try {
-    const fetchCount = String(displayLimit + 1);
-    let stdout: string;
-    try {
-      const out = await execFileAsync(
-        "git",
-        [
-          "log",
-          "-g",
-          "--max-count",
-          fetchCount,
-          "refs/stash",
-          "--pretty=format:%gd%x1f%ai%x1f%gs",
-        ],
-        { cwd: repo, maxBuffer: 1024 * 1024 }
-      );
-      stdout = out.stdout;
-    } catch {
-      return [
-        new GitListTreeItem("info", "(No stashes)", vscode.TreeItemCollapsibleState.None),
-      ];
-    }
-    const lines = stdout.split(/\r?\n/).filter((l) => l.length > 0);
-    if (lines.length === 0) {
-      return [
-        new GitListTreeItem("info", "(No stashes)", vscode.TreeItemCollapsibleState.None),
-      ];
-    }
-    const hasMore = lines.length > displayLimit;
-    const slice = hasMore ? lines.slice(0, displayLimit) : lines;
-    const items = slice.map((line) => {
-      const parts = line.split("\x1f");
-      const ref = parts[0] ?? line;
-      const dateIso = parts[1] ?? "";
-      const gs = parts.slice(2).join("\x1f");
-      const branch = parseStashBranchFromGs(gs);
-      const label = stashDisplayLabel(gs) || ref;
-      return new GitListTreeItem(
-        "stash",
-        label,
-        vscode.TreeItemCollapsibleState.Collapsed,
-        undefined,
-        ref,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        { branch, dateIso }
-      );
-    });
-    if (hasMore) {
-      items.push(
-        new GitListTreeItem(
-          "loadMoreStash",
-          vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
-          vscode.TreeItemCollapsibleState.None
-        )
-      );
-    }
-    return items;
-  } catch {
-    return [emptyLeaf("Failed to read git stash list.")];
   }
 }

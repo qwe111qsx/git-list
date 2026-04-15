@@ -1,5 +1,26 @@
 {
   "gitList.loadMoreBatch": "加载更多… (+{0})",
   "gitList.loadMoreCommand": "加载更多",
-  "gitList.authorColorsCleared": "已清除保存的作者图标颜色。请再次展开 Commits 以重新分配。"
+  "gitList.authorColorsCleared": "已清除保存的作者图标颜色。请再次展开 Commits 以重新分配。",
+  "gitList.createBranchPickCommit": "请在提交列表中右键一条提交。",
+  "gitList.noGitRepo": "当前工作区未找到 Git 仓库。",
+  "gitList.createBranchInputTitle": "新建分支名称",
+  "gitList.createBranchInputPrompt": "分支名（默认为短提交哈希）。可修改后按 Enter 创建并检出。",
+  "gitList.createBranchInputEmpty": "分支名不能为空。",
+  "gitList.createBranchDone": "已新建并检出分支 {0}。",
+  "gitList.createBranchFailed": "无法创建分支：{0}",
+  "gitList.stashActionPick": "请在贮藏列表中右键一条贮藏。",
+  "gitList.applyStashDoneIntro": "已应用贮藏：",
+  "gitList.applyStashFailed": "应用贮藏失败：{0}",
+  "gitList.dropStashConfirmIntro": "确定永久删除以下贮藏？此操作不可恢复。",
+  "gitList.dropStashConfirmButton": "删除",
+  "gitList.dropStashDoneIntro": "已删除贮藏：",
+  "gitList.dropStashFailed": "删除贮藏失败：{0}",
+  "gitList.deleteBranchPick": "请在 Branches 列表中右键一条分支。",
+  "gitList.deleteBranchReadHeadFailed": "无法读取当前分支。",
+  "gitList.deleteBranchCurrent": "无法删除当前检出的分支（{0}）。",
+  "gitList.deleteBranchConfirmIntro": "删除本地分支「{0}」？将执行：git branch -d",
+  "gitList.deleteBranchConfirmButton": "删除",
+  "gitList.deleteBranchDone": "已删除分支 {0}。",
+  "gitList.deleteBranchFailed": "无法删除分支：{0}"
 }

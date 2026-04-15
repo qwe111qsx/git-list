@@ -2,8 +2,16 @@
   "git-list.viewContainer.title": "Git List",
   "git-list.view.name": "Git List",
   "git-list.command.refresh": "Refresh",
+  "git-list.command.refreshCommits": "Refresh commits list",
+  "git-list.command.refreshStash": "Refresh stash list",
+  "git-list.command.refreshBranches": "Refresh branch list",
   "git-list.command.clearAuthorColors": "Git List: Clear Saved Author Icon Colors",
+  "git-list.command.createBranchFromCommit": "Create Branch from Commit…",
+  "git-list.command.applyStash": "Apply Stash",
+  "git-list.command.dropStash": "Drop Stash…",
+  "git-list.command.deleteBranch": "Delete Branch…",
   "git-list.config.title": "Git List",
   "git-list.config.commitsPageSize": "Number of commits to show at first open and for each \"Load more\" click.",
-  "git-list.config.stashPageSize": "Number of stashes to show at first open and for each \"Load more\" click."
+  "git-list.config.stashPageSize": "Number of stashes to show at first open and for each \"Load more\" click.",
+  "git-list.config.branchesPageSize": "Number of local branches to show when Branches is first expanded and for each \"Load more\" click."
 }

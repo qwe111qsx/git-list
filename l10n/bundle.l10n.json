@@ -1,5 +1,26 @@
 {
   "gitList.loadMoreBatch": "Load more… (+{0})",
   "gitList.loadMoreCommand": "Load more",
-  "gitList.authorColorsCleared": "Saved author icon colors cleared. Expand Commits again to reassign."
+  "gitList.authorColorsCleared": "Saved author icon colors cleared. Expand Commits again to reassign.",
+  "gitList.createBranchPickCommit": "Right-click a commit in the list.",
+  "gitList.noGitRepo": "No Git repository found for this workspace.",
+  "gitList.createBranchInputTitle": "New branch name",
+  "gitList.createBranchInputPrompt": "Branch name (default is the short commit hash). Press Enter to create and check out.",
+  "gitList.createBranchInputEmpty": "Branch name cannot be empty.",
+  "gitList.createBranchDone": "Created and checked out branch {0}.",
+  "gitList.createBranchFailed": "Could not create branch: {0}",
+  "gitList.stashActionPick": "Right-click a stash entry in the list.",
+  "gitList.applyStashDoneIntro": "Applied stash:",
+  "gitList.applyStashFailed": "Apply stash failed: {0}",
+  "gitList.dropStashConfirmIntro": "Permanently drop this stash? This cannot be undone.",
+  "gitList.dropStashConfirmButton": "Drop",
+  "gitList.dropStashDoneIntro": "Dropped stash:",
+  "gitList.dropStashFailed": "Drop stash failed: {0}",
+  "gitList.deleteBranchPick": "Right-click a branch in the Branches list.",
+  "gitList.deleteBranchReadHeadFailed": "Could not read current branch.",
+  "gitList.deleteBranchCurrent": "Cannot delete the checked-out branch ({0}).",
+  "gitList.deleteBranchConfirmIntro": "Delete local branch “{0}”? This runs: git branch -d",
+  "gitList.deleteBranchConfirmButton": "Delete",
+  "gitList.deleteBranchDone": "Deleted branch {0}.",
+  "gitList.deleteBranchFailed": "Could not delete branch: {0}"
 }

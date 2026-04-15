@@ -31,7 +31,16 @@
   ],
   "activationEvents": [
     "onView:gitListView",
-    "onCommand:gitList.clearAuthorColors"
+    "onCommand:gitList.clearAuthorColors",
+    "onCommand:gitList.refreshCommits",
+    "onCommand:gitList.refreshStash",
+    "onCommand:gitList.createBranchFromCommit",
+    "onCommand:gitList.refreshBranches",
+    "onCommand:gitList.loadMoreBranchCommits",
+    "onCommand:gitList.applyStash",
+    "onCommand:gitList.dropStash",
+    "onCommand:gitList.loadMoreBranches",
+    "onCommand:gitList.deleteBranch"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -52,6 +61,13 @@
           "minimum": 1,
           "maximum": 500,
           "markdownDescription": "%git-list.config.stashPageSize%"
+        },
+        "git-list.branchesPageSize": {
+          "type": "number",
+          "default": 40,
+          "minimum": 1,
+          "maximum": 500,
+          "markdownDescription": "%git-list.config.branchesPageSize%"
         }
       }
     },
@@ -80,8 +96,39 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "gitList.refreshCommits",
+        "title": "%git-list.command.refreshCommits%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitList.refreshStash",
+        "title": "%git-list.command.refreshStash%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitList.refreshBranches",
+        "title": "%git-list.command.refreshBranches%",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "gitList.clearAuthorColors",
         "title": "%git-list.command.clearAuthorColors%"
+      },
+      {
+        "command": "gitList.createBranchFromCommit",
+        "title": "%git-list.command.createBranchFromCommit%"
+      },
+      {
+        "command": "gitList.applyStash",
+        "title": "%git-list.command.applyStash%"
+      },
+      {
+        "command": "gitList.dropStash",
+        "title": "%git-list.command.dropStash%"
+      },
+      {
+        "command": "gitList.deleteBranch",
+        "title": "%git-list.command.deleteBranch%"
       }
     ],
     "menus": {
@@ -90,6 +137,43 @@
           "command": "gitList.refresh",
           "when": "view == gitListView",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gitList.refreshCommits",
+          "when": "view == gitListView && viewItem == gitListSectionCommits",
+          "group": "inline"
+        },
+        {
+          "command": "gitList.refreshStash",
+          "when": "view == gitListView && viewItem == gitListSectionStash",
+          "group": "inline"
+        },
+        {
+          "command": "gitList.refreshBranches",
+          "when": "view == gitListView && viewItem == gitListSectionBranches",
+          "group": "inline"
+        },
+        {
+          "command": "gitList.createBranchFromCommit",
+          "when": "view == gitListView && viewItem == gitListCommit",
+          "group": "1_git"
+        },
+        {
+          "command": "gitList.applyStash",
+          "when": "view == gitListView && viewItem == gitListStash",
+          "group": "1_git"
+        },
+        {
+          "command": "gitList.dropStash",
+          "when": "view == gitListView && viewItem == gitListStash",
+          "group": "1_git"
+        },
+        {
+          "command": "gitList.deleteBranch",
+          "when": "view == gitListView && viewItem == gitListBranch",
+          "group": "1_git"
         }
       ]
     }
