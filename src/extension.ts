@@ -1,12 +1,29 @@
 import * as vscode from "vscode";
+import { clearAuthorStylesStore } from "./authorStyles";
 import { GitListTreeItem, GitListTreeProvider } from "./gitListTreeProvider";
 import { makeEmptyDocUri, makeGitObjectUri, registerGitListDocumentProvider } from "./gitShowDocumentProvider";
+
+function diffPathBasename(path: string): string {
+  const n = path.replace(/\\/g, "/");
+  const i = n.lastIndexOf("/");
+  return i >= 0 ? n.slice(i + 1) : n;
+}
+
+function shortHashForTitle(hash: string): string {
+  const h = hash.trim();
+  return h.length > 7 ? h.slice(0, 7) : h;
+}
+
+function stashRefShortForTitle(stashRef: string): string {
+  const m = stashRef.match(/^stash@\{(\d+)\}$/);
+  return m ? `#${m[1]}` : stashRef;
+}
 
 /** 注册侧栏树视图、命令，并在可用时订阅内置 Git 的仓库开关事件以刷新列表。 */
 export function activate(context: vscode.ExtensionContext): void {
   registerGitListDocumentProvider(context);
 
-  const provider = new GitListTreeProvider();
+  const provider = new GitListTreeProvider(context);
   // 视图 id 须与 package.json contributes.views 中一致
   const treeView = vscode.window.createTreeView("gitListView", {
     treeDataProvider: provider,
@@ -16,6 +33,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("gitList.refresh", () => provider.refresh())
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.clearAuthorColors", async () => {
+      await clearAuthorStylesStore(context);
+      provider.refresh();
+      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.authorColorsCleared"));
+    })
   );
 
   context.subscriptions.push(
@@ -40,7 +65,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (item.stashRef) {
         left = makeGitObjectUri(repo, `${item.stashRef}^1:${path}`);
         right = makeGitObjectUri(repo, `${item.stashRef}:${path}`);
-        title = `${path} (${item.stashRef})`;
+        title = `${diffPathBasename(path)} (${stashRefShortForTitle(item.stashRef)})`;
       } else if (item.hash) {
         const h = item.hash;
         if (item.changeKind === "added") {
@@ -53,7 +78,7 @@ export function activate(context: vscode.ExtensionContext): void {
           left = makeGitObjectUri(repo, `${h}^:${path}`);
           right = makeGitObjectUri(repo, `${h}:${path}`);
         }
-        title = `${path} (${h})`;
+        title = `${diffPathBasename(path)} (${shortHashForTitle(h)})`;
       } else {
         return;
       }
@@ -63,6 +88,14 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   void subscribeBuiltInGitEvents(context, () => provider.refresh());
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("git-list")) {
+        provider.onGitListConfigurationChanged();
+      }
+    })
+  );
 }
 
 /**

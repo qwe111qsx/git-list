@@ -37,9 +37,23 @@ exports.GitListTreeProvider = exports.GitListTreeItem = void 0;
 const vscode = __importStar(require("vscode"));
 const child_process_1 = require("child_process");
 const util_1 = require("util");
+const authorStyles_1 = require("./authorStyles");
 const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
-/** Commits / Stash 共用分页：首次展示条数与每次「加载更多」增加条数（Stash 在内存中切片）。 */
-const PAGE_SIZE = 40;
+function clampCommitsStashPageSize(n) {
+    const x = Math.floor(Number(n));
+    if (!Number.isFinite(x) || x < 1) {
+        return 40;
+    }
+    return Math.min(x, 500);
+}
+function readCommitsPageSize() {
+    const v = vscode.workspace.getConfiguration("git-list").get("commitsPageSize", 40);
+    return clampCommitsStashPageSize(v);
+}
+function readStashPageSize() {
+    const v = vscode.workspace.getConfiguration("git-list").get("stashPageSize", 40);
+    return clampCommitsStashPageSize(v);
+}
 /** 单次提交/stash 下列出的最大文件数（避免超大 patch 卡 UI）。 */
 const MAX_PATCH_FILES = 400;
 /** 侧栏树单项；patchFile 携带仓库路径与变更类型，用于点击打开 diff。 */
@@ -51,7 +65,11 @@ class GitListTreeItem extends vscode.TreeItem {
     repoRoot;
     relPath;
     changeKind;
-    constructor(kind, label, collapsibleState, hash, stashRef, repoRoot, relPath, changeKind) {
+    commitMeta;
+    commitAccountIcon;
+    stashMeta;
+    patchFolderChildren;
+    constructor(kind, label, collapsibleState, hash, stashRef, repoRoot, relPath, changeKind, commitMeta, commitAccountIcon, stashMeta, patchFolderChildren) {
         super(label, collapsibleState);
         this.kind = kind;
         this.collapsibleState = collapsibleState;
@@ -60,15 +78,29 @@ class GitListTreeItem extends vscode.TreeItem {
         this.repoRoot = repoRoot;
         this.relPath = relPath;
         this.changeKind = changeKind;
+        this.commitMeta = commitMeta;
+        this.commitAccountIcon = commitAccountIcon;
+        this.stashMeta = stashMeta;
+        this.patchFolderChildren = patchFolderChildren;
         if (kind === "commit") {
-            this.iconPath = new vscode.ThemeIcon("git-commit");
-            if (hash) {
+            this.iconPath =
+                commitAccountIcon ?? new vscode.ThemeIcon("account");
+            if (hash && commitMeta) {
+                this.description = `${commitMeta.author} · ${formatCommitListDate(commitMeta.dateAuthorIso)}`;
+                this.tooltip = buildCommitTooltip(label, hash, commitMeta);
+            }
+            else if (hash) {
                 this.description = hash;
                 this.tooltip = `${hash} — ${label}`;
             }
         }
         else if (kind === "stash") {
             this.iconPath = new vscode.ThemeIcon("git-stash");
+            if (stashMeta) {
+                const br = stashMeta.branch.trim();
+                const t = formatCommitListDate(stashMeta.dateIso);
+                this.description = br ? `${br} · ${t}` : t;
+            }
             if (stashRef) {
                 this.tooltip = `${stashRef} — ${label}`;
             }
@@ -80,29 +112,35 @@ class GitListTreeItem extends vscode.TreeItem {
             this.iconPath = new vscode.ThemeIcon("inbox");
         }
         else if (kind === "loadMoreCommits") {
-            this.iconPath = new vscode.ThemeIcon("chevron-down");
+            this.iconPath = undefined;
             this.command = {
                 command: "gitList.loadMoreCommits",
-                title: "Load more",
+                title: vscode.l10n.t("gitList.loadMoreCommand"),
             };
         }
         else if (kind === "loadMoreStash") {
-            this.iconPath = new vscode.ThemeIcon("chevron-down");
+            this.iconPath = undefined;
             this.command = {
                 command: "gitList.loadMoreStashes",
-                title: "Load more",
+                title: vscode.l10n.t("gitList.loadMoreCommand"),
             };
+        }
+        else if (kind === "patchFolder") {
+            this.iconPath = new vscode.ThemeIcon("folder");
         }
         else if (kind === "patchFile") {
             const ck = changeKind ?? "modified";
+            if (relPath) {
+                this.description = relPath;
+            }
             if (ck === "added") {
-                this.iconPath = new vscode.ThemeIcon("diff-added", new vscode.ThemeColor("charts.blue"));
+                this.iconPath = new vscode.ThemeIcon("add", new vscode.ThemeColor("gitDecoration.addedResourceForeground"));
             }
             else if (ck === "deleted") {
-                this.iconPath = new vscode.ThemeIcon("diff-removed", new vscode.ThemeColor("gitDecoration.deletedResourceForeground"));
+                this.iconPath = new vscode.ThemeIcon("remove", new vscode.ThemeColor("gitDecoration.deletedResourceForeground"));
             }
             else {
-                this.iconPath = new vscode.ThemeIcon("diff-modified", new vscode.ThemeColor("charts.green"));
+                this.iconPath = new vscode.ThemeIcon("compare-changes", new vscode.ThemeColor("charts.blue"));
             }
             this.command = {
                 command: "gitList.openPatchFileDiff",
@@ -121,24 +159,37 @@ exports.GitListTreeItem = GitListTreeItem;
  * 点击文件由命令打开 vscode.diff。
  */
 class GitListTreeProvider {
+    extContext;
     _onDidChangeTreeData = new vscode.EventEmitter();
     onDidChangeTreeData = this._onDidChangeTreeData.event;
     /** commit hash 或 stash ref -> 已解析的文件子节点 */
     diffCache = new Map();
-    commitLimit = PAGE_SIZE;
-    stashLimit = PAGE_SIZE;
+    commitLimit;
+    stashLimit;
+    constructor(extContext) {
+        this.extContext = extContext;
+        this.commitLimit = readCommitsPageSize();
+        this.stashLimit = readStashPageSize();
+    }
     refresh() {
-        this.commitLimit = PAGE_SIZE;
-        this.stashLimit = PAGE_SIZE;
+        this.commitLimit = readCommitsPageSize();
+        this.stashLimit = readStashPageSize();
+        this.diffCache.clear();
+        this._onDidChangeTreeData.fire();
+    }
+    /** 设置里修改了 git-list.* 时：重置已加载条数并刷新树。 */
+    onGitListConfigurationChanged() {
+        this.commitLimit = readCommitsPageSize();
+        this.stashLimit = readStashPageSize();
         this.diffCache.clear();
         this._onDidChangeTreeData.fire();
     }
     loadMoreCommits() {
-        this.commitLimit += PAGE_SIZE;
+        this.commitLimit += readCommitsPageSize();
         this._onDidChangeTreeData.fire();
     }
     loadMoreStashes() {
-        this.stashLimit += PAGE_SIZE;
+        this.stashLimit += readStashPageSize();
         this._onDidChangeTreeData.fire();
     }
     getTreeItem(element) {
@@ -163,13 +214,13 @@ class GitListTreeProvider {
             if (!repo) {
                 return [emptyLeaf("No Git repository found.")];
             }
-            return loadCommits(repo, this.commitLimit);
+            return loadCommits(this.extContext, repo, this.commitLimit, readCommitsPageSize());
         }
         if (element.kind === "sectionStash") {
             if (!repo) {
                 return [emptyLeaf("No Git repository found.")];
             }
-            return loadStash(repo, this.stashLimit);
+            return loadStash(repo, this.stashLimit, readStashPageSize());
         }
         if (element.kind === "commit" && element.hash) {
             if (!repo) {
@@ -183,6 +234,9 @@ class GitListTreeProvider {
             }
             return this.getStashPatchFiles(repo, element.stashRef);
         }
+        if (element.kind === "patchFolder") {
+            return element.patchFolderChildren ?? [];
+        }
         return [];
     }
     async getCommitPatchFiles(repo, hash) {
@@ -192,8 +246,18 @@ class GitListTreeProvider {
             return cached;
         }
         try {
-            const { stdout } = await execFileAsync("git", ["show", hash, "--pretty=format:", "-p", "--no-color"], { cwd: repo, maxBuffer: 50 * 1024 * 1024 });
-            const items = patchTextToFileItems(repo, hash, undefined, stdout);
+            let entries = [];
+            try {
+                const { stdout } = await execFileAsync("git", ["show", hash, "--pretty=format:", "-p", "--no-color"], { cwd: repo, maxBuffer: 50 * 1024 * 1024 });
+                entries = parsePatchFileEntries(stdout);
+            }
+            catch {
+                entries = [];
+            }
+            if (entries.length === 0) {
+                entries = await loadCommitFilesViaDiffTree(repo, hash);
+            }
+            const items = buildPatchTreeItems(repo, hash, undefined, entries);
             this.diffCache.set(key, items);
             return items;
         }
@@ -209,7 +273,8 @@ class GitListTreeProvider {
         }
         try {
             const { stdout } = await execFileAsync("git", ["stash", "show", "-p", "--no-color", stashRef], { cwd: repo, maxBuffer: 50 * 1024 * 1024 });
-            const items = patchTextToFileItems(repo, undefined, stashRef, stdout);
+            const entries = parsePatchFileEntries(stdout);
+            const items = buildPatchTreeItems(repo, undefined, stashRef, entries);
             this.diffCache.set(key, items);
             return items;
         }
@@ -221,6 +286,128 @@ class GitListTreeProvider {
 exports.GitListTreeProvider = GitListTreeProvider;
 function emptyLeaf(message) {
     return new GitListTreeItem("info", message, vscode.TreeItemCollapsibleState.None);
+}
+function formatCommitListDate(authorDate) {
+    const m = authorDate.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/);
+    if (m) {
+        return `${m[1]} ${m[2]}`;
+    }
+    return authorDate.trim();
+}
+function buildCommitTooltip(subject, shortHash, meta) {
+    const md = new vscode.MarkdownString();
+    const totalFiles = meta.filesAdded + meta.filesDeleted + meta.filesModified;
+    md.appendMarkdown(`**说明** ${subject}\n\n`);
+    md.appendMarkdown(`**变更文件** 共 ${totalFiles} 个（修改 ${meta.filesModified} · 新增 ${meta.filesAdded} · 删除 ${meta.filesDeleted}）\n\n`);
+    if (meta.binaryFiles > 0) {
+        md.appendMarkdown(`**二进制** ${meta.binaryFiles} 个\n\n`);
+    }
+    md.appendMarkdown(`**行数** +${meta.linesAdded} / −${meta.linesRemoved}\n\n`);
+    md.appendMarkdown(`**作者** ${meta.author} <${meta.authorEmail}>\n\n`);
+    md.appendMarkdown(`**作者时间** ${meta.dateAuthorIso}\n\n`);
+    md.appendMarkdown(`**短哈希** \`${shortHash}\`　**完整哈希** \`${meta.fullHash}\``);
+    return md;
+}
+/** 判断是否为 git log --pretty 产生的提交头行（与 numstat 数据行区分）。 */
+function looksLikeGitCommitHeaderLine(line) {
+    const fields = line.split("\x1f");
+    if (fields.length < 6) {
+        return false;
+    }
+    const full = fields[0].trim();
+    const short = fields[1]?.trim() ?? "";
+    return (/^[0-9a-f]{7,64}$/i.test(full) &&
+        /^[0-9a-f]{4,64}$/i.test(short) &&
+        full.length >= short.length);
+}
+/** 解析 git log --numstat；pretty 行字段间用 \\x1f，避免 subject 含 \\t 错位。 */
+function parseGitLogWithNumstat(stdout) {
+    const records = [];
+    const lines = stdout.split(/\r?\n/);
+    let i = 0;
+    while (i < lines.length) {
+        if (!lines[i]) {
+            i++;
+            continue;
+        }
+        const fields = lines[i].split("\x1f");
+        if (fields.length < 6) {
+            i++;
+            continue;
+        }
+        const [fullHash, hash, author, authorEmail, dateAuthorIso, subject,] = [fields[0], fields[1], fields[2], fields[3], fields[4], fields.slice(5).join("\x1f")];
+        i++;
+        let filesAdded = 0;
+        let filesDeleted = 0;
+        let filesModified = 0;
+        let linesAdded = 0;
+        let linesRemoved = 0;
+        let binaryFiles = 0;
+        while (i < lines.length && lines[i]) {
+            const line = lines[i];
+            // 相邻提交之间可能无空行；下一条 pretty 行无 \\t，不得当作 numstat 跳过
+            if (looksLikeGitCommitHeaderLine(line)) {
+                break;
+            }
+            const t1 = line.indexOf("\t");
+            if (t1 < 0) {
+                i++;
+                continue;
+            }
+            const t2 = line.indexOf("\t", t1 + 1);
+            if (t2 < 0) {
+                i++;
+                continue;
+            }
+            const addStr = line.slice(0, t1);
+            const delStr = line.slice(t1 + 1, t2);
+            if (addStr === "-" && delStr === "-") {
+                binaryFiles++;
+                filesModified++;
+            }
+            else if (addStr === "-") {
+                filesDeleted++;
+                const n = parseInt(delStr, 10);
+                if (!Number.isNaN(n)) {
+                    linesRemoved += n;
+                }
+            }
+            else if (delStr === "-") {
+                filesAdded++;
+                const n = parseInt(addStr, 10);
+                if (!Number.isNaN(n)) {
+                    linesAdded += n;
+                }
+            }
+            else {
+                filesModified++;
+                const a = parseInt(addStr, 10);
+                const d = parseInt(delStr, 10);
+                if (!Number.isNaN(a)) {
+                    linesAdded += a;
+                }
+                if (!Number.isNaN(d)) {
+                    linesRemoved += d;
+                }
+            }
+            i++;
+        }
+        records.push({
+            hash,
+            fullHash,
+            author,
+            authorEmail,
+            dateAuthorIso,
+            subject,
+            filesAdded,
+            filesDeleted,
+            filesModified,
+            linesAdded,
+            linesRemoved,
+            binaryFiles,
+        });
+    }
+    return records;
 }
 function getWorkspaceRoot() {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -261,40 +448,221 @@ function parsePatchFileEntries(patch) {
     }
     return result;
 }
-function patchTextToFileItems(repo, hash, stashRef, patch) {
-    let entries = parsePatchFileEntries(patch);
+/** merge 等无 unified diff 时，用 diff-tree 取变更文件列表。 */
+function parseNameStatus(stdout) {
+    const result = [];
+    for (const line of stdout.split(/\r?\n/)) {
+        if (!line) {
+            continue;
+        }
+        const parts = line.split("\t");
+        const st = parts[0];
+        if (!st) {
+            continue;
+        }
+        if (st === "A") {
+            result.push({ path: parts[1], status: "added" });
+        }
+        else if (st === "D") {
+            result.push({ path: parts[1], status: "deleted" });
+        }
+        else if (st === "M" || st === "T" || st === "U" || st === "X") {
+            result.push({ path: parts[1], status: "modified" });
+        }
+        else if (st.startsWith("R") || st.startsWith("C")) {
+            const newPath = parts.length >= 3 ? parts[2] : parts[1];
+            result.push({ path: newPath, status: "modified" });
+        }
+    }
+    return result;
+}
+async function loadCommitFilesViaDiffTree(repo, hash) {
+    let fromParent = [];
+    try {
+        const { stdout } = await execFileAsync("git", ["diff-tree", "--no-commit-id", "--name-status", "-r", `${hash}^`, hash], { cwd: repo, maxBuffer: 50 * 1024 * 1024 });
+        fromParent = parseNameStatus(stdout);
+    }
+    catch {
+        fromParent = [];
+    }
+    if (fromParent.length > 0) {
+        return fromParent;
+    }
+    try {
+        const { stdout: rootOut } = await execFileAsync("git", ["diff-tree", "--no-commit-id", "--name-status", "-r", "--root", hash], { cwd: repo, maxBuffer: 50 * 1024 * 1024 });
+        return parseNameStatus(rootOut);
+    }
+    catch {
+        return [];
+    }
+}
+/** 路径段（含文件名）的最长公共前缀，对应「最近公共文件夹」之上的共同路径。 */
+function longestCommonPathPrefix(paths) {
+    if (paths.length === 0) {
+        return "";
+    }
+    const segs = paths.map((p) => p.split("/").filter(Boolean));
+    const minLen = Math.min(...segs.map((s) => s.length));
+    const common = [];
+    for (let depth = 0; depth < minLen; depth++) {
+        const token = segs[0][depth];
+        if (!segs.every((s) => s[depth] === token)) {
+            break;
+        }
+        common.push(token);
+    }
+    return common.join("/");
+}
+/** 各文件所在目录路径的最长公共前缀（不含文件名），用于对齐「公共文件夹」剥路径。 */
+function longestCommonParentDir(paths) {
+    if (paths.length === 0) {
+        return "";
+    }
+    const dirs = paths.map((p) => {
+        const n = p.replace(/\\/g, "/");
+        const i = n.lastIndexOf("/");
+        return i < 0 ? "" : n.slice(0, i);
+    });
+    if (paths.length === 1) {
+        return dirs[0] ?? "";
+    }
+    if (dirs.every((d) => d.length === 0)) {
+        return "";
+    }
+    if (dirs.some((d) => d.length === 0)) {
+        return "";
+    }
+    return longestCommonPathPrefix(dirs);
+}
+function stripCommonPrefix(fullPath, prefix) {
+    const f = fullPath;
+    if (!prefix) {
+        return f;
+    }
+    if (f === prefix) {
+        const i = f.lastIndexOf("/");
+        return i >= 0 ? f.slice(i + 1) : f;
+    }
+    if (f.startsWith(prefix + "/")) {
+        return f.slice(prefix.length + 1);
+    }
+    return f;
+}
+function makePatchFileTreeItem(repo, hash, stashRef, fullPath, status) {
+    const norm = fullPath.replace(/\\/g, "/");
+    const base = norm.includes("/") ? norm.slice(norm.lastIndexOf("/") + 1) : norm;
+    return new GitListTreeItem("patchFile", base, vscode.TreeItemCollapsibleState.None, hash, stashRef, repo, norm, status);
+}
+function buildPatchLevel(entries, repo, hash, stashRef) {
+    const filesHere = [];
+    const dirMap = new Map();
+    for (const e of entries) {
+        const i = e.rel.indexOf("/");
+        if (i < 0) {
+            filesHere.push(e);
+        }
+        else {
+            const dir = e.rel.slice(0, i);
+            const restPath = e.rel.slice(i + 1);
+            const list = dirMap.get(dir) ?? [];
+            list.push({ path: e.path, status: e.status, rel: restPath });
+            dirMap.set(dir, list);
+        }
+    }
+    const items = [];
+    const dirNames = [...dirMap.keys()].sort((a, b) => a.localeCompare(b));
+    for (const d of dirNames) {
+        const children = buildPatchLevel(dirMap.get(d), repo, hash, stashRef);
+        items.push(new GitListTreeItem("patchFolder", d, vscode.TreeItemCollapsibleState.Collapsed, hash, stashRef, repo, undefined, undefined, undefined, undefined, undefined, children));
+    }
+    filesHere.sort((a, b) => a.rel.localeCompare(b.rel));
+    for (const f of filesHere) {
+        items.push(makePatchFileTreeItem(repo, hash, stashRef, f.path, f.status));
+    }
+    return items;
+}
+function buildPatchTreeItems(repo, hash, stashRef, entries) {
     if (entries.length === 0) {
         return [emptyLeaf("(No changes)")];
     }
     let truncated = false;
+    let list = entries;
     if (entries.length > MAX_PATCH_FILES) {
-        entries = entries.slice(0, MAX_PATCH_FILES);
+        list = entries.slice(0, MAX_PATCH_FILES);
         truncated = true;
     }
-    const items = entries.map((e) => new GitListTreeItem("patchFile", e.path, vscode.TreeItemCollapsibleState.None, hash, stashRef, repo, e.path, e.status));
-    if (truncated) {
-        items.push(new GitListTreeItem("info", "(File list truncated…)", vscode.TreeItemCollapsibleState.None));
+    const normPaths = list.map((e) => e.path.replace(/\\/g, "/"));
+    const appendTruncation = (items) => {
+        if (truncated) {
+            items.push(new GitListTreeItem("info", "(File list truncated…)", vscode.TreeItemCollapsibleState.None));
+        }
+        return items;
+    };
+    if (list.length === 1) {
+        const e = list[0];
+        const oneFile = makePatchFileTreeItem(repo, hash, stashRef, normPaths[0], e.status);
+        return appendTruncation([oneFile]);
     }
-    return items;
+    const lca = longestCommonParentDir(normPaths);
+    const relList = list.map((e, idx) => ({
+        path: normPaths[idx],
+        status: e.status,
+        rel: stripCommonPrefix(normPaths[idx], lca),
+    }));
+    const flatOnly = relList.every((r) => r.rel.length > 0 && !r.rel.includes("/"));
+    let items;
+    if (flatOnly) {
+        relList.sort((a, b) => a.rel.localeCompare(b.rel));
+        items = relList.map((r) => makePatchFileTreeItem(repo, hash, stashRef, r.path, r.status));
+    }
+    else {
+        items = buildPatchLevel(relList, repo, hash, stashRef);
+    }
+    return appendTruncation(items);
 }
-async function loadCommits(repo, displayLimit) {
+function parseStashBranchFromGs(gs) {
+    const m = gs.match(/^(?:WIP on|On)\s+([^:]+):/);
+    return m?.[1]?.trim() ?? "";
+}
+function stashDisplayLabel(gs) {
+    const m = gs.match(/^(?:WIP on|On)\s+[^:]+:\s*(.*)$/);
+    const rest = (m?.[1] ?? gs).trim();
+    return rest || gs;
+}
+async function loadCommits(context, repo, displayLimit, pageSizeForLabel) {
     try {
         const fetchCount = String(displayLimit + 1);
-        const { stdout } = await execFileAsync("git", ["log", "--pretty=format:%h%x09%s", "-n", fetchCount], { cwd: repo, maxBuffer: 1024 * 1024 });
-        const lines = stdout.split(/\r?\n/).filter(Boolean);
-        if (lines.length === 0) {
+        const { stdout } = await execFileAsync("git", [
+            "log",
+            "-n",
+            fetchCount,
+            "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+            "--numstat",
+        ], { cwd: repo, maxBuffer: 10 * 1024 * 1024 });
+        const parsed = parseGitLogWithNumstat(stdout);
+        if (parsed.length === 0) {
             return [emptyLeaf("(No commits)")];
         }
-        const hasMore = lines.length > displayLimit;
-        const slice = hasMore ? lines.slice(0, displayLimit) : lines;
-        const items = slice.map((line) => {
-            const tab = line.indexOf("\t");
-            const hash = tab >= 0 ? line.slice(0, tab) : line;
-            const subject = tab >= 0 ? line.slice(tab + 1) : "";
-            return new GitListTreeItem("commit", subject || hash, vscode.TreeItemCollapsibleState.Collapsed, hash);
+        const hasMore = parsed.length > displayLimit;
+        const slice = hasMore ? parsed.slice(0, displayLimit) : parsed;
+        const items = slice.map((rec) => {
+            const meta = {
+                fullHash: rec.fullHash,
+                author: rec.author,
+                authorEmail: rec.authorEmail,
+                dateAuthorIso: rec.dateAuthorIso,
+                filesAdded: rec.filesAdded,
+                filesDeleted: rec.filesDeleted,
+                filesModified: rec.filesModified,
+                linesAdded: rec.linesAdded,
+                linesRemoved: rec.linesRemoved,
+                binaryFiles: rec.binaryFiles,
+            };
+            const icon = (0, authorStyles_1.getAuthorAccountIconUri)(context, rec.authorEmail, rec.author);
+            return new GitListTreeItem("commit", rec.subject || rec.hash, vscode.TreeItemCollapsibleState.Collapsed, rec.hash, undefined, undefined, undefined, undefined, meta, icon);
         });
         if (hasMore) {
-            items.push(new GitListTreeItem("loadMoreCommits", "Load more…", vscode.TreeItemCollapsibleState.None));
+            items.push(new GitListTreeItem("loadMoreCommits", vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel), vscode.TreeItemCollapsibleState.None));
         }
         return items;
     }
@@ -302,13 +670,27 @@ async function loadCommits(repo, displayLimit) {
         return [emptyLeaf("Failed to read git log.")];
     }
 }
-async function loadStash(repo, displayLimit) {
+async function loadStash(repo, displayLimit, pageSizeForLabel) {
     try {
-        const { stdout } = await execFileAsync("git", ["stash", "list"], {
-            cwd: repo,
-            maxBuffer: 1024 * 1024,
-        });
-        const lines = stdout.split(/\r?\n/).filter(Boolean);
+        const fetchCount = String(displayLimit + 1);
+        let stdout;
+        try {
+            const out = await execFileAsync("git", [
+                "log",
+                "-g",
+                "--max-count",
+                fetchCount,
+                "refs/stash",
+                "--pretty=format:%gd%x1f%ai%x1f%gs",
+            ], { cwd: repo, maxBuffer: 1024 * 1024 });
+            stdout = out.stdout;
+        }
+        catch {
+            return [
+                new GitListTreeItem("info", "(No stashes)", vscode.TreeItemCollapsibleState.None),
+            ];
+        }
+        const lines = stdout.split(/\r?\n/).filter((l) => l.length > 0);
         if (lines.length === 0) {
             return [
                 new GitListTreeItem("info", "(No stashes)", vscode.TreeItemCollapsibleState.None),
@@ -317,13 +699,16 @@ async function loadStash(repo, displayLimit) {
         const hasMore = lines.length > displayLimit;
         const slice = hasMore ? lines.slice(0, displayLimit) : lines;
         const items = slice.map((line) => {
-            const m = line.match(/^(stash@\{[^}]+\}):\s*(.*)$/);
-            const ref = m?.[1] ?? line;
-            const msg = m?.[2] ?? "";
-            return new GitListTreeItem("stash", msg || ref, vscode.TreeItemCollapsibleState.Collapsed, undefined, ref);
+            const parts = line.split("\x1f");
+            const ref = parts[0] ?? line;
+            const dateIso = parts[1] ?? "";
+            const gs = parts.slice(2).join("\x1f");
+            const branch = parseStashBranchFromGs(gs);
+            const label = stashDisplayLabel(gs) || ref;
+            return new GitListTreeItem("stash", label, vscode.TreeItemCollapsibleState.Collapsed, undefined, ref, undefined, undefined, undefined, undefined, undefined, { branch, dateIso });
         });
         if (hasMore) {
-            items.push(new GitListTreeItem("loadMoreStash", "Load more…", vscode.TreeItemCollapsibleState.None));
+            items.push(new GitListTreeItem("loadMoreStash", vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel), vscode.TreeItemCollapsibleState.None));
         }
         return items;
     }

@@ -36,12 +36,26 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
+const authorStyles_1 = require("./authorStyles");
 const gitListTreeProvider_1 = require("./gitListTreeProvider");
 const gitShowDocumentProvider_1 = require("./gitShowDocumentProvider");
+function diffPathBasename(path) {
+    const n = path.replace(/\\/g, "/");
+    const i = n.lastIndexOf("/");
+    return i >= 0 ? n.slice(i + 1) : n;
+}
+function shortHashForTitle(hash) {
+    const h = hash.trim();
+    return h.length > 7 ? h.slice(0, 7) : h;
+}
+function stashRefShortForTitle(stashRef) {
+    const m = stashRef.match(/^stash@\{(\d+)\}$/);
+    return m ? `#${m[1]}` : stashRef;
+}
 /** 注册侧栏树视图、命令，并在可用时订阅内置 Git 的仓库开关事件以刷新列表。 */
 function activate(context) {
     (0, gitShowDocumentProvider_1.registerGitListDocumentProvider)(context);
-    const provider = new gitListTreeProvider_1.GitListTreeProvider();
+    const provider = new gitListTreeProvider_1.GitListTreeProvider(context);
     // 视图 id 须与 package.json contributes.views 中一致
     const treeView = vscode.window.createTreeView("gitListView", {
         treeDataProvider: provider,
@@ -49,6 +63,11 @@ function activate(context) {
     });
     context.subscriptions.push(treeView);
     context.subscriptions.push(vscode.commands.registerCommand("gitList.refresh", () => provider.refresh()));
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.clearAuthorColors", async () => {
+        await (0, authorStyles_1.clearAuthorStylesStore)(context);
+        provider.refresh();
+        void vscode.window.showInformationMessage(vscode.l10n.t("gitList.authorColorsCleared"));
+    }));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.loadMoreCommits", () => provider.loadMoreCommits()));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.loadMoreStashes", () => provider.loadMoreStashes()));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.openPatchFileDiff", async (item) => {
@@ -63,7 +82,7 @@ function activate(context) {
         if (item.stashRef) {
             left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}^1:${path}`);
             right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}:${path}`);
-            title = `${path} (${item.stashRef})`;
+            title = `${diffPathBasename(path)} (${stashRefShortForTitle(item.stashRef)})`;
         }
         else if (item.hash) {
             const h = item.hash;
@@ -79,7 +98,7 @@ function activate(context) {
                 left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}^:${path}`);
                 right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}:${path}`);
             }
-            title = `${path} (${h})`;
+            title = `${diffPathBasename(path)} (${shortHashForTitle(h)})`;
         }
         else {
             return;
@@ -87,6 +106,11 @@ function activate(context) {
         await vscode.commands.executeCommand("vscode.diff", left, right, title);
     }));
     void subscribeBuiltInGitEvents(context, () => provider.refresh());
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration("git-list")) {
+            provider.onGitListConfigurationChanged();
+        }
+    }));
 }
 /**
  * 监听 vscode.git 打开/关闭仓库，触发刷新。

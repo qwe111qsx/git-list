@@ -1,0 +1,5 @@
+{
+  "gitList.loadMoreBatch": "加载更多… (+{0})",
+  "gitList.loadMoreCommand": "加载更多",
+  "gitList.authorColorsCleared": "已清除保存的作者图标颜色。请再次展开 Commits 以重新分配。"
+}

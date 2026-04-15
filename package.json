@@ -11,10 +11,31 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:gitListView"
+    "onView:gitListView",
+    "onCommand:gitList.clearAuthorColors"
   ],
   "main": "./out/extension.js",
+  "l10n": "./l10n",
   "contributes": {
+    "configuration": {
+      "title": "%git-list.config.title%",
+      "properties": {
+        "git-list.commitsPageSize": {
+          "type": "number",
+          "default": 40,
+          "minimum": 1,
+          "maximum": 500,
+          "markdownDescription": "%git-list.config.commitsPageSize%"
+        },
+        "git-list.stashPageSize": {
+          "type": "number",
+          "default": 40,
+          "minimum": 1,
+          "maximum": 500,
+          "markdownDescription": "%git-list.config.stashPageSize%"
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -38,6 +59,10 @@
         "command": "gitList.refresh",
         "title": "%git-list.command.refresh%",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "gitList.clearAuthorColors",
+        "title": "%git-list.command.clearAuthorColors%"
       }
     ],
     "menus": {
