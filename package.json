@@ -1,10 +1,10 @@
 {
   "name": "git-list",
-  "displayName": "%git-list.displayName%",
-  "description": "%git-list.description%",
-  "version": "0.0.1",
+  "displayName": "Git List",
+  "description": "Browse Git commits and stashes in the side bar; open per-file diffs from the tree.",
+  "version": "0.0.5",
   "author": "liuyuanfan",
-	"publisher": "liuyuanfan",
+  "publisher": "liuyuanfan",
   "license": "MIT",
   "icon": "media/icon.png",
   "repository": {
@@ -31,8 +31,7 @@
   ],
   "activationEvents": [
     "onView:gitListView",
-    "onCommand:gitList.clearAuthorColors",
-    "onCommand:gitList.openSupportPage"
+    "onCommand:gitList.clearAuthorColors"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -83,10 +82,6 @@
       {
         "command": "gitList.clearAuthorColors",
         "title": "%git-list.command.clearAuthorColors%"
-      },
-      {
-        "command": "gitList.openSupportPage",
-        "title": "%git-list.command.openSupportPage%"
       }
     ],
     "menus": {
@@ -104,7 +99,11 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "render-icon": "node scripts/render-icon-png.mjs",
-    "package": "npm run compile && npm run render-icon && vsce package"
+    "package": "npm run compile && npm run render-icon && vsce package",
+    "release": "node scripts/release.mjs patch",
+    "release:patch": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

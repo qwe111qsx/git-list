@@ -1,11 +1,8 @@
 {
-  "git-list.displayName": "Git List",
-  "git-list.description": "在侧栏展示提交与贮藏列表。",
   "git-list.viewContainer.title": "Git List",
   "git-list.view.name": "Git List",
   "git-list.command.refresh": "刷新",
   "git-list.command.clearAuthorColors": "Git List: 清除已保存的作者图标颜色",
-  "git-list.command.openSupportPage": "Git List: 打开支持页面（收款码）",
   "git-list.config.title": "Git List",
   "git-list.config.commitsPageSize": "首次展开 Commits 与每次「加载更多」时获取的提交条数。",
   "git-list.config.stashPageSize": "首次展开 Stash 与每次「加载更多」时获取的贮藏条数。"

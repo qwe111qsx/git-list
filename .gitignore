@@ -1,5 +1,8 @@
 node_modules/
 out/
+
+# 误创建的嵌套空仓库会导致 git add 报错（does not have a commit checked out）
+Git List/
 *.vsix
 .DS_Store
 *.log

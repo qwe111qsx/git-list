@@ -6,6 +6,27 @@
       "script": "compile",
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "Release: patch + publish",
+      "type": "npm",
+      "script": "release:patch",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
+    },
+    {
+      "label": "Release: minor + publish",
+      "type": "npm",
+      "script": "release:minor",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
+    },
+    {
+      "label": "Release: major + publish",
+      "type": "npm",
+      "script": "release:major",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
     }
   ]
 }

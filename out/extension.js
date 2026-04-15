@@ -68,10 +68,6 @@ function activate(context) {
         provider.refresh();
         void vscode.window.showInformationMessage(vscode.l10n.t("gitList.authorColorsCleared"));
     }));
-    context.subscriptions.push(vscode.commands.registerCommand("gitList.openSupportPage", async () => {
-        const uri = vscode.Uri.joinPath(context.extensionUri, "docs", "support.html");
-        await vscode.env.openExternal(uri);
-    }));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.loadMoreCommits", () => provider.loadMoreCommits()));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.loadMoreStashes", () => provider.loadMoreStashes()));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.openPatchFileDiff", async (item) => {

@@ -44,13 +44,6 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("gitList.openSupportPage", async () => {
-      const uri = vscode.Uri.joinPath(context.extensionUri, "docs", "support.html");
-      await vscode.env.openExternal(uri);
-    })
-  );
-
-  context.subscriptions.push(
     vscode.commands.registerCommand("gitList.loadMoreCommits", () => provider.loadMoreCommits())
   );
 

@@ -4,7 +4,7 @@
 
 **中文** · 在侧栏展示工作区内 Git 仓库的**提交**与**贮藏**列表；展开后可浏览变更文件，点击文件在编辑器中打开 **diff**。可为作者图标保存颜色，也可一键清除。
 
-![Extension icon](https://gitee.com/liuyuanfan6/git-list/raw/master/media/icon.png)
+![Extension icon](https://gitee.com/liuyuanfan6/git-list/raw/main/media/icon.png)
 
 ## Features
 
@@ -12,7 +12,6 @@
 - **Stash** tree with paging (`git-list.stashPageSize`), same diff behavior for stashed changes.
 - **Refresh** from the view title; optional auto-refresh when the built-in Git extension opens or closes a repository.
 - **Clear saved author icon colors** command when author/account icon colors should reset.
-- **Open Support Page** command opens a local HTML page with sponsor QR codes (WeChat & Alipay).
 
 ## Requirements
 
@@ -25,8 +24,6 @@
 1. Open a folder or workspace that contains Git repositories.
 2. Click the **Git List** icon in the **Activity Bar**.
 3. Expand **Commits** or **Stash**, then open items or use **Load more** when shown.
-4. Command Palette: `Git List: Open Support Page` — support / QR page.  
-   命令面板：`Git List: 打开支持页面（收款码）`。
 
 ## Configuration
 
@@ -37,8 +34,11 @@
 
 ## Sponsor / 打赏
 
-- 在线预览（与扩展内打开的页面一致，需仓库已推送）：[support.html](https://gitee.com/liuyuanfan6/git-list/raw/master/docs/support.html)。也可在 VS Code 命令面板执行 **Git List: Open Support Page** 打开本地副本。
-- 页面内含微信与支付宝收款码图片（`media/wechat.png`、`media/alipay.png`）。
+若本扩展对你有帮助，欢迎扫码支持后续开发（以下为 Gitee `main` 分支上的图片，市场页与网页均可直接显示）。
+
+| 微信 WeChat | 支付宝 Alipay |
+| :---------: | :-----------: |
+| <img src="https://gitee.com/liuyuanfan6/git-list/raw/main/media/wechat.png" alt="微信收款码" width="220" /> | <img src="https://gitee.com/liuyuanfan6/git-list/raw/main/media/alipay.png" alt="支付宝收款码" width="220" /> |
 
 ## Development
 
@@ -57,7 +57,7 @@ npm run render-icon
 
 ## Publishing to the Visual Studio Marketplace
 
-See [marketplace.zh-CN.md](https://gitee.com/liuyuanfan6/git-list/blob/master/docs/marketplace.zh-CN.md) for publisher registration, Personal Access Token, and `vsce` steps.
+See [marketplace.zh-CN.md](https://gitee.com/liuyuanfan6/git-list/blob/main/docs/marketplace.zh-CN.md) for publisher registration, Personal Access Token, and `vsce` steps.
 
 打包扩展：
 
@@ -65,8 +65,8 @@ See [marketplace.zh-CN.md](https://gitee.com/liuyuanfan6/git-list/blob/master/do
 npm run package
 ```
 
-生成 `git-list-0.0.1.vsix`（版本号随 `package.json` 变化）。上架前请将 `package.json` 中的 `publisher` 改为你自己的 [Publisher ID](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#create-a-publisher)。
+生成 `git-list-<version>.vsix`（版本号见 `package.json`）。**商店标题与简介**请使用 `package.json` 中的英文 `displayName` / `description`（Marketplace 不会解析 `package.nls` 里的占位符）；侧栏与命令的文案仍由 `package.nls*.json` 做界面级本地化。
 
 ## License
 
-MIT — see [LICENSE](https://gitee.com/liuyuanfan6/git-list/blob/master/LICENSE).
+MIT — see [LICENSE](https://gitee.com/liuyuanfan6/git-list/blob/main/LICENSE).
