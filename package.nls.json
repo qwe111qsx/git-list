@@ -5,6 +5,7 @@
   "git-list.view.name": "Git List",
   "git-list.command.refresh": "Refresh",
   "git-list.command.clearAuthorColors": "Git List: Clear Saved Author Icon Colors",
+  "git-list.command.openSupportPage": "Git List: Open Support Page (QR codes)",
   "git-list.config.title": "Git List",
   "git-list.config.commitsPageSize": "Number of commits to show at first open and for each \"Load more\" click.",
   "git-list.config.stashPageSize": "Number of stashes to show at first open and for each \"Load more\" click."

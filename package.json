@@ -3,16 +3,36 @@
   "displayName": "%git-list.displayName%",
   "description": "%git-list.description%",
   "version": "0.0.1",
-  "publisher": "local",
+  "author": "liuyuanfan",
+	"publisher": "liuyuanfan",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/liuyuanfan6/git-list.git"
+  },
+  "bugs": {
+    "url": "https://gitee.com/liuyuanfan6/git-list/issues"
+  },
+  "keywords": [
+    "git",
+    "scm",
+    "commits",
+    "stash",
+    "sidebar",
+    "history",
+    "diff"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "SCM Providers"
   ],
   "activationEvents": [
     "onView:gitListView",
-    "onCommand:gitList.clearAuthorColors"
+    "onCommand:gitList.clearAuthorColors",
+    "onCommand:gitList.openSupportPage"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -63,6 +83,10 @@
       {
         "command": "gitList.clearAuthorColors",
         "title": "%git-list.command.clearAuthorColors%"
+      },
+      {
+        "command": "gitList.openSupportPage",
+        "title": "%git-list.command.openSupportPage%"
       }
     ],
     "menus": {
@@ -78,11 +102,15 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "render-icon": "node scripts/render-icon-png.mjs",
+    "package": "npm run compile && npm run render-icon && vsce package"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.8.0",
+    "sharp": "^0.34.5",
     "typescript": "^5.3.3"
   }
 }

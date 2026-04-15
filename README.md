@@ -1,83 +1,72 @@
-
-
-Based on the code map provided, I can see this is a TypeScript VS Code extension project. The main source files aren't directly visible in the map, but I can identify:
-
-1. **Project structure**: VS Code extension with localization (l10n/)
-2. **Dependencies**: TypeScript, @types/vscode, @types/node
-3. **Localization**: bundle.l10n.json (English) and bundle.l10n.zh-cn.json (Chinese)
-
-Let me create a comprehensive README based on this VS Code extension project:
-
-```markdown
 # Git List
 
-一个用于管理 Git 仓库列表的 VS Code 扩展插件。
+**English** · A VS Code sidebar view that lists **recent commits** and **stashes** for Git repositories opened in the workspace. Expand a commit or stash to browse changed files; click a file to open a **diff** in the editor. Optional **per-author icon colors** are remembered until you clear them.
 
-## 功能特点
+**中文** · 在侧栏展示工作区内 Git 仓库的**提交**与**贮藏**列表；展开后可浏览变更文件，点击文件在编辑器中打开 **diff**。可为作者图标保存颜色，也可一键清除。
 
-- 在 VS Code 中便捷管理多个 Git 仓库
-- 支持快速切换和克隆仓库
-- 提供本地化的中文和英文界面
+![Extension icon](https://gitee.com/liuyuanfan6/git-list/raw/master/media/icon.png)
 
-## 快速开始
+## Features
 
-### 前置要求
+- **Commits** tree with paging (`git-list.commitsPageSize`), file list under each commit, inline diff via built-in diff editor.
+- **Stash** tree with paging (`git-list.stashPageSize`), same diff behavior for stashed changes.
+- **Refresh** from the view title; optional auto-refresh when the built-in Git extension opens or closes a repository.
+- **Clear saved author icon colors** command when author/account icon colors should reset.
+- **Open Support Page** command opens a local HTML page with sponsor QR codes (WeChat & Alipay).
 
-- Node.js (LTS 版本)
-- VS Code 1.75.0 或更高版本
+## Requirements
 
-### 安装
+- [Git](https://git-scm.com/) available on your `PATH`.
+- VS Code **1.85** or newer.
+- Recommended: built-in **Git** extension enabled (for repository open/close events).
 
-1. 克隆仓库:
-```bash
-git clone https://gitee.com/liuyuanfan6/git-list
-cd git-list
-```
+## Usage
 
-2. 安装依赖:
+1. Open a folder or workspace that contains Git repositories.
+2. Click the **Git List** icon in the **Activity Bar**.
+3. Expand **Commits** or **Stash**, then open items or use **Load more** when shown.
+4. Command Palette: `Git List: Open Support Page` — support / QR page.  
+   命令面板：`Git List: 打开支持页面（收款码）`。
+
+## Configuration
+
+| Setting | Default | Description |
+|--------|---------|-------------|
+| `git-list.commitsPageSize` | `40` | Commits loaded on first expand and per “Load more”. |
+| `git-list.stashPageSize` | `40` | Stashes loaded on first expand and per “Load more”. |
+
+## Sponsor / 打赏
+
+- 在线预览（与扩展内打开的页面一致，需仓库已推送）：[support.html](https://gitee.com/liuyuanfan6/git-list/raw/master/docs/support.html)。也可在 VS Code 命令面板执行 **Git List: Open Support Page** 打开本地副本。
+- 页面内含微信与支付宝收款码图片（`media/wechat.png`、`media/alipay.png`）。
+
+## Development
+
 ```bash
 npm install
-```
-
-3. 编译项目:
-```bash
 npm run compile
 ```
 
-4. 在 VS Code 中按 F5 调试运行
+Press **F5** in VS Code to launch the Extension Development Host.
 
-### 使用方法
+After editing `media/icon.svg`, regenerate the marketplace icon:
 
-1. 按 `Ctrl+Shift+P` 打开命令面板
-2. 输入并选择 "Git List: 打开仓库列表"
-3. 浏览和管理您的 Git 仓库
-
-## 项目结构
-
-```
-├── .cursor/rules/          # Cursor 规则配置
-├── .vscode/                # VS Code 调试配置
-├── l10n/                   # 国际化资源文件
-│   ├── bundle.l10n.json    # 英文翻译
-│   └── bundle.l10n.zh-cn.json # 中文翻译
-├── media/                  # 媒体资源
-└── node_modules/          # 依赖包
+```bash
+npm run render-icon
 ```
 
-## 快捷键
+## Publishing to the Visual Studio Marketplace
 
-| 操作 | 快捷键 |
-|------|--------|
-| 打开仓库列表 | `Ctrl+Shift+G` |
-| 刷新列表 | `Ctrl+R` |
+See [marketplace.zh-CN.md](https://gitee.com/liuyuanfan6/git-list/blob/master/docs/marketplace.zh-CN.md) for publisher registration, Personal Access Token, and `vsce` steps.
 
-## 贡献指南
+打包扩展：
 
-欢迎提交 Issue 和 Pull Request！
-
-## 许可证
-
-MIT License
+```bash
+npm run package
 ```
 
-这是一个简洁的 README，介绍了项目的基本信息。由于代码文件不可访问，我基于项目结构和依赖项提供了合理的描述。
+生成 `git-list-0.0.1.vsix`（版本号随 `package.json` 变化）。上架前请将 `package.json` 中的 `publisher` 改为你自己的 [Publisher ID](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#create-a-publisher)。
+
+## License
+
+MIT — see [LICENSE](https://gitee.com/liuyuanfan6/git-list/blob/master/LICENSE).
