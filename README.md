@@ -61,7 +61,7 @@ All settings are under **Git List** in VS Code Settings. Range is **1–500** un
 | Requirement | Notes |
 |---------------|--------|
 | [Git](https://git-scm.com/) | Must be on your `PATH` so the extension can run `git`. |
-| VS Code | **1.85** or newer (`engines.vscode` in `package.json`). |
+| VS Code | **1.73** or newer (`engines.vscode` in `package.json`; aligns with `vscode.l10n` localization). |
 | Built-in **Git** | Recommended: enables smoother auto-refresh when repositories open, close, or change. |
 
 ## Usage
