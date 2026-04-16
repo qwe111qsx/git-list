@@ -2,6 +2,8 @@
 
 A VS Code **activity bar** view for Git repositories in your workspace. Inspect **commits**, **local branches**, **remotes** (remote-tracking branches), and **stashes** in the sidebar. Expand an entry to see changed files; click a file to open a **diff** in the built-in editor. Optional **per-author** colors for commit icons are remembered until you clear them.
 
+**Author note:** The capabilities here are ones I use regularly in my day-to-day work. If you need extra features or changes, email [949257333@qq.com](mailto:949257333@qq.com).
+
 ![Extension icon](https://gitee.com/liuyuanfan6/git-list/raw/main/media/icon.png)
 
 ## Features
