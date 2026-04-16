@@ -1,7 +1,8 @@
 /**
- * 先编译并生成图标，再递增 package.json 版本号，最后执行 vsce publish。
+ * 先编译并生成图标，再递增 package.json 版本号，最后 vsce publish（VS Marketplace）。
+ * 若仓库根目录存在 ovsx-token.txt（一行 PAT，不入库），再 ovsx publish（Open VSX）；无则跳过。
  * 用法: node scripts/release.mjs [patch|minor|major]，默认 patch。
- * 需已 npx vsce login <PublisherID> 且 PAT 有效。
+ * VS Marketplace：需已 vsce login。Open VSX：PAT 见 https://open-vsx.org/user-settings/tokens
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -50,6 +51,23 @@ function run(label, cmd) {
   }
 }
 
+/** Open VSX：PAT 仅经环境变量传入，避免出现在 shell 参数字符串里。 */
+function runOvsxPublish(pat) {
+  console.log(`\n▶ ovsx publish (Open VSX)\n`);
+  const r = spawnSync("npx", ["ovsx", "publish"], {
+    cwd: root,
+    stdio: "inherit",
+    shell: true,
+    env: { ...process.env, OVSX_PAT: pat },
+  });
+  if (r.error) {
+    throw r.error;
+  }
+  if (r.status !== 0) {
+    process.exit(r.status ?? 1);
+  }
+}
+
 run("compile", "npm run compile");
 run("render-icon", "npm run render-icon");
 
@@ -61,5 +79,17 @@ fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n", "utf8");
 console.log(`\n▶ version ${prev} → ${next} (${releaseType})\n`);
 
 run("vsce publish", "npx vsce publish");
+
+const ovsxTokenPath = path.join(root, "ovsx-token.txt");
+if (fs.existsSync(ovsxTokenPath)) {
+  const pat = fs.readFileSync(ovsxTokenPath, "utf8").trim();
+  if (pat) {
+    runOvsxPublish(pat);
+  } else {
+    console.log("\n▷ ovsx-token.txt 为空，跳过 Open VSX。\n");
+  }
+} else {
+  console.log("\n▷ 未找到 ovsx-token.txt，跳过 Open VSX。\n");
+}
 
 console.log(`\nDone. Published v${next}. Commit package.json when ready.\n`);

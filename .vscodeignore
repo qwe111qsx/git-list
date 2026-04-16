@@ -6,3 +6,4 @@ src/**
 **/*.map
 .cursor/**
 scripts/**
+ovsx-token.txt

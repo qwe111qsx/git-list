@@ -2,7 +2,7 @@
   "name": "git-list",
   "displayName": "Git List",
   "description": "Sidebar: Git commits, branches, remotes, and stashes — browse files and open diffs; paging, refresh, stash and branch actions.",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "author": "liuyuanfan",
   "publisher": "liuyuanfan",
   "license": "MIT",
@@ -286,6 +286,7 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.73.0",
     "@vscode/vsce": "^3.8.0",
+    "ovsx": "^0.10.4",
     "sharp": "^0.34.5",
     "typescript": "^5.3.3"
   }

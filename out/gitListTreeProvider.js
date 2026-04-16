@@ -242,7 +242,7 @@ class GitListTreeItem extends vscode.TreeItem {
             }
             this.command = {
                 command: "gitList.openPatchFileDiff",
-                title: "Open diff",
+                title: vscode.l10n.t("gitList.openPatchFileDiffTitle"),
                 arguments: [this],
             };
         }
@@ -700,7 +700,7 @@ class GitListTreeProvider {
             return items;
         }
         catch {
-            return [emptyLeaf("Failed to read git stash list.")];
+            return [emptyLeaf(vscode.l10n.t("gitList.stashListReadFailed"))];
         }
     }
     getTreeItem(element) {
@@ -729,50 +729,50 @@ class GitListTreeProvider {
         }
         if (element.kind === "sectionBranches") {
             if (!repo) {
-                return [emptyLeaf("No Git repository found.")];
+                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
             }
             return this.loadBranchRows(repo);
         }
         if (element.kind === "sectionRemotes") {
             if (!repo) {
-                return [emptyLeaf("No Git repository found.")];
+                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
             }
             return this.loadRemoteRows(repo);
         }
         if (element.kind === "remote" && element.remoteName) {
             if (!repo) {
-                return [emptyLeaf("No Git repository found.")];
+                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
             }
             return this.loadRemoteBranchRows(repo, element.remoteName);
         }
         if (element.kind === "branch" && element.branchName) {
             if (!repo) {
-                return [emptyLeaf("No Git repository found.")];
+                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
             }
             const limit = this.getBranchCommitLimit(element.branchName);
             return loadCommits(this.extContext, repo, limit, readCommitsPageSize(), element.branchName, element.branchName, this.expandedCommitFullHashes);
         }
         if (element.kind === "sectionCommits") {
             if (!repo) {
-                return [emptyLeaf("No Git repository found.")];
+                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
             }
             return loadCommits(this.extContext, repo, this.commitLimit, readCommitsPageSize(), undefined, undefined, this.expandedCommitFullHashes);
         }
         if (element.kind === "sectionStash") {
             if (!repo) {
-                return [emptyLeaf("No Git repository found.")];
+                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
             }
             return this.loadStashList(repo, this.stashLimit, readStashPageSize());
         }
         if (element.kind === "commit" && element.hash) {
             if (!repo) {
-                return [emptyLeaf("No Git repository found.")];
+                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
             }
             return this.getCommitPatchFiles(repo, element.hash);
         }
         if (element.kind === "stash" && element.stashRef) {
             if (!repo) {
-                return [emptyLeaf("No Git repository found.")];
+                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
             }
             return this.getStashPatchFiles(repo, element.stashRef);
         }
@@ -787,7 +787,7 @@ class GitListTreeProvider {
             for (const key of this.branchRowByName.keys()) {
                 this.branchRowByName.delete(key);
             }
-            return [emptyLeaf("(No branches)")];
+            return [emptyLeaf(vscode.l10n.t("gitList.emptyNoBranches"))];
         }
         const seen = new Set(rows.map((r) => r.name));
         for (const key of [...this.branchRowByName.keys()]) {
@@ -818,7 +818,7 @@ class GitListTreeProvider {
         const names = await listRemoteNames(repo);
         if (names.length === 0) {
             this.remoteRowByName.clear();
-            return [emptyLeaf("(No remotes)")];
+            return [emptyLeaf(vscode.l10n.t("gitList.emptyNoRemotes"))];
         }
         const seen = new Set(names);
         for (const key of [...this.remoteRowByName.keys()]) {
@@ -854,7 +854,7 @@ class GitListTreeProvider {
                     this.remoteBranchRowByRef.delete(key);
                 }
             }
-            return [emptyLeaf("(No remote branches)")];
+            return [emptyLeaf(vscode.l10n.t("gitList.emptyNoRemoteBranches"))];
         }
         const seen = new Set(rows.map((r) => r.name));
         for (const key of [...this.remoteBranchRowByRef.keys()]) {
@@ -904,7 +904,7 @@ class GitListTreeProvider {
             return items;
         }
         catch {
-            return [emptyLeaf("Failed to load diff.")];
+            return [emptyLeaf(vscode.l10n.t("gitList.diffLoadFailed"))];
         }
     }
     async getStashPatchFiles(repo, stashRef) {
@@ -921,7 +921,7 @@ class GitListTreeProvider {
             return items;
         }
         catch {
-            return [emptyLeaf("Failed to load stash diff.")];
+            return [emptyLeaf(vscode.l10n.t("gitList.stashDiffLoadFailed"))];
         }
     }
 }
@@ -1277,7 +1277,7 @@ function buildPatchLevel(entries, repo, hash, stashRef) {
 }
 function buildPatchTreeItems(repo, hash, stashRef, entries) {
     if (entries.length === 0) {
-        return [emptyLeaf("(No changes)")];
+        return [emptyLeaf(vscode.l10n.t("gitList.emptyNoChanges"))];
     }
     let truncated = false;
     let list = entries;
@@ -1506,7 +1506,7 @@ async function loadCommits(context, repo, displayLimit, pageSizeForLabel, logRev
         });
         const parsed = parseGitLogWithNumstat(stdout);
         if (parsed.length === 0) {
-            return [emptyLeaf("(No commits)")];
+            return [emptyLeaf(vscode.l10n.t("gitList.emptyNoCommits"))];
         }
         const hasMore = parsed.length > displayLimit;
         const slice = hasMore ? parsed.slice(0, displayLimit) : parsed;
@@ -1540,6 +1540,6 @@ async function loadCommits(context, repo, displayLimit, pageSizeForLabel, logRev
         return items;
     }
     catch {
-        return [emptyLeaf("Failed to read git log.")];
+        return [emptyLeaf(vscode.l10n.t("gitList.gitLogReadFailed"))];
     }
 }

@@ -1,6 +1,4 @@
 {
-  "git-list.viewContainer.title": "Git List",
-  "git-list.view.name": "Git List",
   "git-list.command.refresh": "刷新",
   "git-list.command.refreshCommits": "刷新提交列表",
   "git-list.command.refreshStash": "刷新贮藏列表",
@@ -20,9 +18,8 @@
   "git-list.command.showRepoGitStatus": "Git List: 查看仓库状态",
   "git-list.command.abortMerge": "Git List: 中止合并",
   "git-list.command.abortRebase": "Git List: 中止变基",
-  "git-list.config.title": "Git List",
-  "git-list.config.commitsPageSize": "首次展开 Commits 与每次「加载更多」时获取的提交条数。",
-  "git-list.config.stashPageSize": "首次展开 Stash 与每次「加载更多」时获取的贮藏条数。",
+  "git-list.config.commitsPageSize": "首次打开与每次点击「加载更多」时获取的提交条数。",
+  "git-list.config.stashPageSize": "首次打开与每次点击「加载更多」时获取的贮藏条数。",
   "git-list.config.branchesPageSize": "首次展开 Branches 与每次「加载更多」时列出的本地分支条数；各远程下的跟踪分支列表分页与此相同。",
-  "git-list.config.remotesPageSize": "首次展开 Remotes 分区与在该分区每次「加载更多」时列出的远程名称条数（默认 10）。各远程下的跟踪分支列表使用上面的「分支分页」配置。"
+  "git-list.config.remotesPageSize": "首次展开 Remotes 分区与在该分区每次「加载更多」时列出的远程名称条数（默认 10）。各远程下的跟踪分支列表使用上面的 Branches 分页配置。"
 }
