@@ -1,8 +1,8 @@
 {
   "name": "git-list",
   "displayName": "Git List",
-  "description": "Browse Git commits and stashes in the side bar; open per-file diffs from the tree.",
-  "version": "0.0.5",
+  "description": "Sidebar: Git commits, branches, remotes, and stashes — browse files and open diffs; paging, refresh, stash and branch actions.",
+  "version": "0.0.6",
   "author": "liuyuanfan",
   "publisher": "liuyuanfan",
   "license": "MIT",
@@ -36,11 +36,23 @@
     "onCommand:gitList.refreshStash",
     "onCommand:gitList.createBranchFromCommit",
     "onCommand:gitList.refreshBranches",
+    "onCommand:gitList.refreshBranchCommits",
+    "onCommand:gitList.refreshRemotes",
+    "onCommand:gitList.refreshRemoteBranches",
     "onCommand:gitList.loadMoreBranchCommits",
+    "onCommand:gitList.loadMoreRemotes",
+    "onCommand:gitList.loadMoreRemoteBranches",
     "onCommand:gitList.applyStash",
     "onCommand:gitList.dropStash",
     "onCommand:gitList.loadMoreBranches",
-    "onCommand:gitList.deleteBranch"
+    "onCommand:gitList.deleteBranch",
+    "onCommand:gitList.deleteBranchesOlderThanSixMonths",
+    "onCommand:gitList.openBranchesMoreActions",
+    "onCommand:gitList.mergeBranchIntoHead",
+    "onCommand:gitList.checkoutBranch",
+    "onCommand:gitList.showRepoGitStatus",
+    "onCommand:gitList.abortMerge",
+    "onCommand:gitList.abortRebase"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -68,6 +80,13 @@
           "minimum": 1,
           "maximum": 500,
           "markdownDescription": "%git-list.config.branchesPageSize%"
+        },
+        "git-list.remotesPageSize": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 500,
+          "markdownDescription": "%git-list.config.remotesPageSize%"
         }
       }
     },
@@ -111,6 +130,21 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "gitList.refreshBranchCommits",
+        "title": "%git-list.command.refreshBranchCommits%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitList.refreshRemotes",
+        "title": "%git-list.command.refreshRemotes%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitList.refreshRemoteBranches",
+        "title": "%git-list.command.refreshRemoteBranches%",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "gitList.clearAuthorColors",
         "title": "%git-list.command.clearAuthorColors%"
       },
@@ -129,6 +163,35 @@
       {
         "command": "gitList.deleteBranch",
         "title": "%git-list.command.deleteBranch%"
+      },
+      {
+        "command": "gitList.deleteBranchesOlderThanSixMonths",
+        "title": "%git-list.command.deleteBranchesOlderThanSixMonths%"
+      },
+      {
+        "command": "gitList.openBranchesMoreActions",
+        "title": "%git-list.command.openBranchesMoreActions%",
+        "icon": "$(kebab-horizontal)"
+      },
+      {
+        "command": "gitList.mergeBranchIntoHead",
+        "title": "%git-list.command.mergeBranchIntoHead%"
+      },
+      {
+        "command": "gitList.checkoutBranch",
+        "title": "%git-list.command.checkoutBranch%"
+      },
+      {
+        "command": "gitList.showRepoGitStatus",
+        "title": "%git-list.command.showRepoGitStatus%"
+      },
+      {
+        "command": "gitList.abortMerge",
+        "title": "%git-list.command.abortMerge%"
+      },
+      {
+        "command": "gitList.abortRebase",
+        "title": "%git-list.command.abortRebase%"
       }
     ],
     "menus": {
@@ -153,6 +216,26 @@
         {
           "command": "gitList.refreshBranches",
           "when": "view == gitListView && viewItem == gitListSectionBranches",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitList.openBranchesMoreActions",
+          "when": "view == gitListView && viewItem == gitListSectionBranches",
+          "group": "inline@2"
+        },
+        {
+          "command": "gitList.refreshBranchCommits",
+          "when": "view == gitListView && (viewItem == gitListBranch || viewItem == gitListBranchUnmerged || viewItem == gitListRemoteBranch || viewItem == gitListRemoteBranchUnmerged)",
+          "group": "inline"
+        },
+        {
+          "command": "gitList.refreshRemotes",
+          "when": "view == gitListView && viewItem == gitListSectionRemotes",
+          "group": "inline"
+        },
+        {
+          "command": "gitList.refreshRemoteBranches",
+          "when": "view == gitListView && viewItem == gitListRemote",
           "group": "inline"
         },
         {
@@ -171,8 +254,18 @@
           "group": "1_git"
         },
         {
+          "command": "gitList.checkoutBranch",
+          "when": "view == gitListView && (viewItem == gitListBranch || viewItem == gitListBranchUnmerged || viewItem == gitListRemoteBranch || viewItem == gitListRemoteBranchUnmerged)",
+          "group": "1_git"
+        },
+        {
+          "command": "gitList.mergeBranchIntoHead",
+          "when": "view == gitListView && (viewItem == gitListBranchUnmerged || viewItem == gitListRemoteBranchUnmerged)",
+          "group": "1_git"
+        },
+        {
           "command": "gitList.deleteBranch",
-          "when": "view == gitListView && viewItem == gitListBranch",
+          "when": "view == gitListView && (viewItem == gitListBranch || viewItem == gitListBranchUnmerged)",
           "group": "1_git"
         }
       ]
