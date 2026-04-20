@@ -6,8 +6,8 @@
   "git-list.command.refreshStash": "Refresh stash list",
   "git-list.command.refreshBranches": "Refresh branch list",
   "git-list.command.refreshBranchCommits": "Refresh commits under this branch",
-  "git-list.command.refreshRemotes": "Refresh remotes list",
-  "git-list.command.refreshRemoteBranches": "Refresh branches under this remote",
+  "git-list.command.refreshRemotes": "Fetch all remotes and refresh list",
+  "git-list.command.refreshRemoteBranches": "Fetch this remote and refresh branches",
   "git-list.command.clearAuthorColors": "Git List: Clear Saved Author Icon Colors",
   "git-list.command.createBranchFromCommit": "Create Branch from Commit…",
   "git-list.command.applyStash": "Apply Stash",
@@ -24,5 +24,7 @@
   "git-list.config.commitsPageSize": "Number of commits to show at first open and for each \"Load more\" click.",
   "git-list.config.stashPageSize": "Number of stashes to show at first open and for each \"Load more\" click.",
   "git-list.config.branchesPageSize": "Number of local branches to show when Branches is first expanded and for each \"Load more\" click.",
-  "git-list.config.remotesPageSize": "Number of remote names to show when Remotes is first expanded and for each \"Load more\" click there. Branches under each remote use Branches page size."
+  "git-list.config.remotesPageSize": "Number of remote names to show when Remotes is first expanded and for each \"Load more\" click there. Branches under each remote use Branches page size.",
+  "git-list.config.showCursorLineGitHint": "After the active line in the editor, show the current branch, git blame author, and last-change time for that line.",
+  "git-list.config.cursorLineGitHintPreloadMaxLines": "Preload git blame for the first N lines of each file (one git blame call) so moving the caret within that range is faster. 0 disables preloading (only the current line is blamed on demand)."
 }

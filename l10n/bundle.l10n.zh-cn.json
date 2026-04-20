@@ -77,5 +77,9 @@
   "gitList.branchesMoreAbortMergeTitle": "中止合并",
   "gitList.branchesMoreAbortMergeDesc": "git merge --abort（仅在有进行中的合并时）",
   "gitList.branchesMoreAbortRebaseTitle": "中止变基",
-  "gitList.branchesMoreAbortRebaseDesc": "git rebase --abort（仅在有进行中的变基时）"
+  "gitList.branchesMoreAbortRebaseDesc": "git rebase --abort（仅在有进行中的变基时）",
+  "gitList.fetchAllRemotesProgressTitle": "正在获取所有远程…",
+  "gitList.fetchOneRemoteProgressTitle": "正在获取远程 {0}…",
+  "gitList.fetchAllRemotesFailed": "无法获取所有远程",
+  "gitList.fetchOneRemoteFailed": "无法获取该远程"
 }

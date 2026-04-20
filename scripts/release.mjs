@@ -1,8 +1,9 @@
 /**
  * 先编译并生成图标，再递增 package.json 版本号，最后 vsce publish（VS Marketplace）。
- * 若仓库根目录存在 ovsx-token.txt（一行 PAT，不入库），再 ovsx publish（Open VSX）；无则跳过。
+ * VS Marketplace：若存在 vsce-token.txt（一行 Azure DevOps / Marketplace PAT），经 VSCE_PAT 发布；
+ *   若无该文件或为空，则先执行 vsce login <publisher>（交互），再 vsce publish。
+ * Open VSX：若存在 ovsx-token.txt 则 ovsx publish，否则跳过。
  * 用法: node scripts/release.mjs [patch|minor|major]，默认 patch。
- * VS Marketplace：需已 vsce login。Open VSX：PAT 见 https://open-vsx.org/user-settings/tokens
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -51,6 +52,23 @@ function run(label, cmd) {
   }
 }
 
+/** VS Marketplace：PAT 经环境变量传入。 */
+function runVscePublish(pat) {
+  console.log(`\n▶ vsce publish (VS Marketplace，使用 vsce-token.txt)\n`);
+  const r = spawnSync("npx", ["vsce", "publish"], {
+    cwd: root,
+    stdio: "inherit",
+    shell: true,
+    env: { ...process.env, VSCE_PAT: pat },
+  });
+  if (r.error) {
+    throw r.error;
+  }
+  if (r.status !== 0) {
+    process.exit(r.status ?? 1);
+  }
+}
+
 /** Open VSX：PAT 仅经环境变量传入，避免出现在 shell 参数字符串里。 */
 function runOvsxPublish(pat) {
   console.log(`\n▶ ovsx publish (Open VSX)\n`);
@@ -78,7 +96,23 @@ pkg.version = next;
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n", "utf8");
 console.log(`\n▶ version ${prev} → ${next} (${releaseType})\n`);
 
-run("vsce publish", "npx vsce publish");
+const vsceTokenPath = path.join(root, "vsce-token.txt");
+if (fs.existsSync(vsceTokenPath)) {
+  const vscePat = fs.readFileSync(vsceTokenPath, "utf8").trim();
+  if (vscePat) {
+    runVscePublish(vscePat);
+  } else {
+    console.log("\n▷ vsce-token.txt 为空，改为 vsce login 后发布…\n");
+    run("vsce login", `npx vsce login ${pkg.publisher}`);
+    run("vsce publish", "npx vsce publish");
+  }
+} else {
+  console.log(
+    "\n▷ 未找到 vsce-token.txt，先 vsce login（交互），再发布…\n"
+  );
+  run("vsce login", `npx vsce login ${pkg.publisher}`);
+  run("vsce publish", "npx vsce publish");
+}
 
 const ovsxTokenPath = path.join(root, "ovsx-token.txt");
 if (fs.existsSync(ovsxTokenPath)) {

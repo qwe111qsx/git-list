@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { clearAuthorStylesStore } from "./authorStyles";
+import { registerCursorLineGitHint } from "./cursorLineGitHint";
 import { GitListTreeItem, GitListTreeProvider, resolveWorkspaceGitRoot } from "./gitListTreeProvider";
 import { makeEmptyDocUri, makeGitObjectUri, registerGitListDocumentProvider } from "./gitShowDocumentProvider";
 
@@ -129,6 +130,7 @@ function stashRefShortForTitle(stashRef: string): string {
 /** 注册侧栏树视图、命令，并在可用时订阅内置 Git 的仓库开关事件以刷新列表。 */
 export function activate(context: vscode.ExtensionContext): void {
   registerGitListDocumentProvider(context);
+  registerCursorLineGitHint(context);
 
   gitListOutput = vscode.window.createOutputChannel("Git List");
   context.subscriptions.push(gitListOutput);
@@ -333,14 +335,62 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("gitList.refreshRemotes", () => provider.refreshRemotesList())
+    vscode.commands.registerCommand("gitList.refreshRemotes", async () => {
+      const repo = await resolveWorkspaceGitRoot();
+      if (!repo) {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        return;
+      }
+      try {
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: vscode.l10n.t("gitList.fetchAllRemotesProgressTitle"),
+            cancellable: false,
+          },
+          async () => {
+            await execFileAsync("git", ["fetch", "--all", "--prune"], {
+              cwd: repo,
+              maxBuffer: 50 * 1024 * 1024,
+            });
+          }
+        );
+        provider.refreshRemotesList();
+      } catch (err) {
+        showGitErrorMessage("gitList.fetchAllRemotesFailed", err);
+      }
+    })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("gitList.refreshRemoteBranches", (item?: GitListTreeItem) => {
+    vscode.commands.registerCommand("gitList.refreshRemoteBranches", async (item?: GitListTreeItem) => {
       const target = item ?? treeView.selection[0];
-      if (target) {
+      if (!target || target.kind !== "remote" || !target.remoteName) {
+        return;
+      }
+      const repo = await resolveWorkspaceGitRoot();
+      if (!repo) {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        return;
+      }
+      const rn = target.remoteName;
+      try {
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: vscode.l10n.t("gitList.fetchOneRemoteProgressTitle", rn),
+            cancellable: false,
+          },
+          async () => {
+            await execFileAsync("git", ["fetch", rn, "--prune"], {
+              cwd: repo,
+              maxBuffer: 50 * 1024 * 1024,
+            });
+          }
+        );
         provider.refreshRemoteBranchesList(target);
+      } catch (err) {
+        showGitErrorMessage("gitList.fetchOneRemoteFailed", err);
       }
     })
   );

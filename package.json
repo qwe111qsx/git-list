@@ -2,7 +2,7 @@
   "name": "git-list",
   "displayName": "Git List",
   "description": "Sidebar: Git commits, branches, remotes, and stashes — browse files and open diffs; paging, refresh, stash and branch actions.",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "author": "liuyuanfan",
   "publisher": "liuyuanfan",
   "license": "MIT",
@@ -24,12 +24,13 @@
     "diff"
   ],
   "engines": {
-    "vscode": "^1.73.0"
+    "vscode": "^1.74.0"
   },
   "categories": [
     "SCM Providers"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onView:gitListView",
     "onCommand:gitList.clearAuthorColors",
     "onCommand:gitList.refreshCommits",
@@ -87,6 +88,18 @@
           "minimum": 1,
           "maximum": 500,
           "markdownDescription": "%git-list.config.remotesPageSize%"
+        },
+        "git-list.showCursorLineGitHint": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%git-list.config.showCursorLineGitHint%"
+        },
+        "git-list.cursorLineGitHintPreloadMaxLines": {
+          "type": "number",
+          "default": 400,
+          "minimum": 0,
+          "maximum": 20000,
+          "markdownDescription": "%git-list.config.cursorLineGitHintPreloadMaxLines%"
         }
       }
     },
@@ -284,7 +297,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "@types/vscode": "^1.73.0",
+    "@types/vscode": "^1.74.0",
     "@vscode/vsce": "^3.8.0",
     "ovsx": "^0.10.4",
     "sharp": "^0.34.5",

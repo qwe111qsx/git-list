@@ -7,3 +7,4 @@ src/**
 .cursor/**
 scripts/**
 ovsx-token.txt
+vsce-token.txt

@@ -10,5 +10,6 @@ npm-debug.log*
 yarn-error.log*
 .env
 .env.*
-# Open VSX PAT（本地发布用，勿提交）
+# 发布用 PAT（本地文件，勿提交）
 ovsx-token.txt
+vsce-token.txt

@@ -77,5 +77,9 @@
   "gitList.branchesMoreAbortMergeTitle": "Abort merge",
   "gitList.branchesMoreAbortMergeDesc": "git merge --abort (only if merging)",
   "gitList.branchesMoreAbortRebaseTitle": "Abort rebase",
-  "gitList.branchesMoreAbortRebaseDesc": "git rebase --abort (only if rebasing)"
+  "gitList.branchesMoreAbortRebaseDesc": "git rebase --abort (only if rebasing)",
+  "gitList.fetchAllRemotesProgressTitle": "Fetching all remotes…",
+  "gitList.fetchOneRemoteProgressTitle": "Fetching {0}…",
+  "gitList.fetchAllRemotesFailed": "Could not fetch all remotes",
+  "gitList.fetchOneRemoteFailed": "Could not fetch remote"
 }

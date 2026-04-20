@@ -39,6 +39,7 @@ const vscode = __importStar(require("vscode"));
 const child_process_1 = require("child_process");
 const util_1 = require("util");
 const authorStyles_1 = require("./authorStyles");
+const cursorLineGitHint_1 = require("./cursorLineGitHint");
 const gitListTreeProvider_1 = require("./gitListTreeProvider");
 const gitShowDocumentProvider_1 = require("./gitShowDocumentProvider");
 const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
@@ -149,6 +150,7 @@ function stashRefShortForTitle(stashRef) {
 /** 注册侧栏树视图、命令，并在可用时订阅内置 Git 的仓库开关事件以刷新列表。 */
 function activate(context) {
     (0, gitShowDocumentProvider_1.registerGitListDocumentProvider)(context);
+    (0, cursorLineGitHint_1.registerCursorLineGitHint)(context);
     gitListOutput = vscode.window.createOutputChannel("Git List");
     context.subscriptions.push(gitListOutput);
     const provider = new gitListTreeProvider_1.GitListTreeProvider(context);
@@ -320,11 +322,55 @@ function activate(context) {
             provider.refreshBranchCommitsList(target);
         }
     }));
-    context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshRemotes", () => provider.refreshRemotesList()));
-    context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshRemoteBranches", (item) => {
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshRemotes", async () => {
+        const repo = await (0, gitListTreeProvider_1.resolveWorkspaceGitRoot)();
+        if (!repo) {
+            void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+            return;
+        }
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: vscode.l10n.t("gitList.fetchAllRemotesProgressTitle"),
+                cancellable: false,
+            }, async () => {
+                await execFileAsync("git", ["fetch", "--all", "--prune"], {
+                    cwd: repo,
+                    maxBuffer: 50 * 1024 * 1024,
+                });
+            });
+            provider.refreshRemotesList();
+        }
+        catch (err) {
+            showGitErrorMessage("gitList.fetchAllRemotesFailed", err);
+        }
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshRemoteBranches", async (item) => {
         const target = item ?? treeView.selection[0];
-        if (target) {
+        if (!target || target.kind !== "remote" || !target.remoteName) {
+            return;
+        }
+        const repo = await (0, gitListTreeProvider_1.resolveWorkspaceGitRoot)();
+        if (!repo) {
+            void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+            return;
+        }
+        const rn = target.remoteName;
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: vscode.l10n.t("gitList.fetchOneRemoteProgressTitle", rn),
+                cancellable: false,
+            }, async () => {
+                await execFileAsync("git", ["fetch", rn, "--prune"], {
+                    cwd: repo,
+                    maxBuffer: 50 * 1024 * 1024,
+                });
+            });
             provider.refreshRemoteBranchesList(target);
+        }
+        catch (err) {
+            showGitErrorMessage("gitList.fetchOneRemoteFailed", err);
         }
     }));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.clearAuthorColors", async () => {

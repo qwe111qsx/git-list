@@ -1,6 +1,6 @@
 # Git List
 
-A VS Code **activity bar** view for Git repositories in your workspace. Inspect **commits**, **local branches**, **remotes** (remote-tracking branches), and **stashes** in the sidebar. Expand an entry to see changed files; click a file to open a **diff** in the built-in editor. Optional **per-author** colors for commit icons are remembered until you clear them.
+A VS Code **activity bar** view for Git repositories in your workspace. Inspect **commits**, **local branches**, **remotes** (remote-tracking branches), and **stashes** in the sidebar. Expand an entry to see changed files; click a file to open a **diff** in the built-in editor. In normal **file** editors, the **active line** can show an inline hint after the line: **current branch**, **git blame author**, and **last-change time** for that line (toggle with `git-list.showCursorLineGitHint`). You can **preload** blame for the first **N** lines per file (`git-list.cursorLineGitHintPreloadMaxLines`, default `400`) so moving the caret inside that range stays fast; set **`0`** to disable preloading and blame only the current line on demand. Optional **per-author** colors for commit icons are remembered until you clear them.
 
 **Author note:** The capabilities here are ones I use regularly in my day-to-day work. If you need extra features or changes, email [949257333@qq.com](mailto:949257333@qq.com).
 
@@ -12,9 +12,10 @@ A VS Code **activity bar** view for Git repositories in your workspace. Inspect 
 |------|----------------|
 | **Commits** | Paginated history from `HEAD`, expandable file list, open diff per file. Section-level refresh. |
 | **Branches** | Paginated local branches (`git branch`), each branch shows paginated `git log` for that ref. Branches **not merged into current HEAD** use a **red branch icon** (from `git for-each-ref … --no-merged HEAD`); the label is the plain branch name. **Context:** switch to branch (`git switch`), merge into current branch when unmerged (`git merge`), delete local branch (`git branch -d`). **⋯** (right of refresh) opens a **Quick Pick**: **show repository status** (`git status` in the **Git List** output channel), **abort merge** / **abort rebase** (with confirmation when `MERGE_HEAD` / `REBASE_HEAD` exists), and **bulk-delete** locals whose **tip** is older than **6 months** (with progress). |
-| **Remotes** | Paginated remote names (`git remote`). Each remote lists remote-tracking branches (`refs/remotes/…`). Same log/diff behavior as Branches; unmerged-into-HEAD styling and **merge** when applicable. **Context:** switch — tries `git switch <name>`, then `git switch -c <name> <remote/ref>` if no local branch exists. Section and per-remote refresh. Section title is plain English (`Remotes`). |
+| **Remotes** | Paginated remote names (`git remote`). Each **remote** row shows **(N)** after the name — number of `refs/remotes/<name>/…` tracking branches (same scope as the list when expanded). Local **branch** rows show the tip **date** on the right instead. Each remote lists remote-tracking branches (`refs/remotes/…`). Same log/diff behavior as Branches; unmerged-into-HEAD styling and **merge** when applicable. **Context:** switch — tries `git switch <name>`, then `git switch -c <name> <remote/ref>` if no local branch exists. **Refresh** runs **`git fetch --all --prune`** (section) or **`git fetch <remote> --prune`** (per remote), then reloads the list. Section title is plain English (`Remotes`). |
 | **Stash** | Paginated stash list, expandable patch tree, open diffs. Apply or drop stash from context menu. |
 | **Global** | Refresh button on the view title. Optional auto-refresh when the built-in **Git** extension reports repo or state changes (workspace-scoped). |
+| **Editor** | After the caret line in tracked **workspace files**, optional text: **branch · author · time** from `git blame` (debounced; can be disabled in settings). Optional **preload** of blame for the first **N** lines (one `git blame` range per file) to speed up caret moves; lines beyond **N** are still blamed on demand. |
 | **Author icons** | Command **Git List: Clear Saved Author Icon Colors** resets stored colors for commit avatars. |
 
 ## Commands
@@ -33,8 +34,8 @@ Commands are also available from the **Command Palette** (`Ctrl+Shift+P` / `Cmd+
 | **Git List: Abort Rebase** | `git rebase --abort` after confirmation (only if a rebase is in progress). | Quick Pick from **More branch actions…**; Command Palette |
 | **Delete local branches older than 6 months…** | Deletes **local** branches whose **tip** committer date is older than 6 months (`git branch -d` each); never deletes the checked-out branch; unmerged branches are left and summarized. Progress in a notification while running. | Quick Pick from **More branch actions…**; Command Palette |
 | **Refresh commits under this branch** | Reset commit paging for that branch only. | Local or remote-tracking **branch** row (inline) |
-| **Refresh remotes list** | Reset remote-name paging and refresh **Remotes**. | **Remotes** section row (inline) |
-| **Refresh branches under this remote** | Reset branch paging under that remote. | **Remote** row (e.g. `origin`, inline) |
+| **Fetch all remotes and refresh list** | Runs **`git fetch --all --prune`**, then resets paging and refreshes **Remotes**. | **Remotes** section row (inline) |
+| **Fetch this remote and refresh branches** | Runs **`git fetch <remote> --prune`**, then resets branch paging under that remote. | **Remote** row (e.g. `origin`, inline) |
 | **Git List: Clear Saved Author Icon Colors** | Clear persisted author icon colors. | Command Palette |
 | **Create Branch from Commit…** | Create and check out a new branch at the selected commit. | **Commit** row (context) |
 | **Apply Stash** | `git stash apply` for the selected entry. | **Stash** row (context) |
@@ -47,7 +48,7 @@ Commands are also available from the **Command Palette** (`Ctrl+Shift+P` / `Cmd+
 
 ## Configuration
 
-All settings are under **Git List** in VS Code Settings. Range is **1–500** unless noted.
+All settings are under **Git List** in VS Code Settings. Page-size options use range **1–500**; the preload cap uses **0–20000**.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -55,24 +56,27 @@ All settings are under **Git List** in VS Code Settings. Range is **1–500** un
 | `git-list.stashPageSize` | `40` | Stashes loaded when **Stash** is expanded and for each **Load more**. |
 | `git-list.branchesPageSize` | `40` | Local branches when **Branches** is expanded; remote-tracking branches under each **remote**; **Load more** step in both places. |
 | `git-list.remotesPageSize` | `10` | Remote **names** when **Remotes** is expanded and for each **Load more** in that list only (not the branch list under a remote). |
+| `git-list.showCursorLineGitHint` | `true` | When enabled, append **current branch**, **blame author**, and **author time** after the active line in file editors inside a Git repo. |
+| `git-list.cursorLineGitHintPreloadMaxLines` | `400` | Preload `git blame` for the first **N** lines of each file (`N` = min(line count, this value)). **`0`** disables preloading (only the active line is blamed when needed). Max **20000**. |
 
 ## Requirements
 
 | Requirement | Notes |
 |---------------|--------|
 | [Git](https://git-scm.com/) | Must be on your `PATH` so the extension can run `git`. |
-| VS Code | **1.73** or newer (`engines.vscode` in `package.json`; aligns with `vscode.l10n` localization). |
+| VS Code | **1.74** or newer (`engines.vscode` in `package.json`; `onStartupFinished` activates editor hints without opening the sidebar first). |
 | Built-in **Git** | Recommended: enables smoother auto-refresh when repositories open, close, or change. |
 
 ## Usage
 
 1. Open a folder or multi-root workspace that contains a Git repository.
-2. Click **Git List** in the **Activity Bar**.
-3. Expand **Commits**, **Branches**, **Remotes**, or **Stash**.
-4. Expand a commit or stash to see files; click a file to open a diff. Use **Load more** when it appears.
-5. Under **Branches** or under a remote, expand a branch to page through its commits the same way.
-6. On the **Branches** section row, click **⋯** (right of refresh) for **repository status**, **abort merge/rebase**, or bulk-delete locals whose tip is older than six months.
-7. Right-click a **branch** row to **switch**, **merge** (if it is not fully merged into `HEAD` — red branch icon), or **delete** (local only).
+2. (Optional) Open a source file: with `git-list.showCursorLineGitHint` on (default), moving the caret updates the **branch · author · time** hint at the end of that line. When `git-list.cursorLineGitHintPreloadMaxLines` is not **`0`** (default **`400`**), blame for the first **N** lines is prefetched so jumping within that range is quicker; editing the file clears the cached blame for that path.
+3. Click **Git List** in the **Activity Bar**.
+4. Expand **Commits**, **Branches**, **Remotes**, or **Stash**.
+5. Expand a commit or stash to see files; click a file to open a diff. Use **Load more** when it appears.
+6. Under **Branches** or under a remote, expand a branch to page through its commits the same way.
+7. On the **Branches** section row, click **⋯** (right of refresh) for **repository status**, **abort merge/rebase**, or bulk-delete locals whose tip is older than six months.
+8. Right-click a **branch** row to **switch**, **merge** (if it is not fully merged into `HEAD` — red branch icon), or **delete** (local only).
 
 ### Status bar branch and “!”
 
@@ -80,7 +84,7 @@ If the **built-in Git** extension shows a warning next to the current branch in 
 
 ### Git errors and the **Git List** output channel
 
-When a Git List action fails (merge, checkout, branch delete, stash, etc.), the notification includes **summary and Git output**; the same text is **appended** to **Output → Git List**, and you can open that panel from the notification when offered.
+When a Git List action fails (merge, checkout, branch delete, stash, **fetch**, etc.), the notification includes **summary and Git output**; the same text is **appended** to **Output → Git List**, and you can open that panel from the notification when offered.
 
 ## Sponsor
 

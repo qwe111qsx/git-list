@@ -815,7 +815,10 @@ class GitListTreeProvider {
         return items;
     }
     async loadRemoteRows(repo) {
-        const names = await listRemoteNames(repo);
+        const [names, branchCounts] = await Promise.all([
+            listRemoteNames(repo),
+            countRemoteTrackingBranchesPerRemote(repo),
+        ]);
         if (names.length === 0) {
             this.remoteRowByName.clear();
             return [emptyLeaf(vscode.l10n.t("gitList.emptyNoRemotes"))];
@@ -839,6 +842,8 @@ class GitListTreeProvider {
             setTreeItemCollapsible(item, this.expandedRemoteNames.has(name)
                 ? vscode.TreeItemCollapsibleState.Expanded
                 : vscode.TreeItemCollapsibleState.Collapsed);
+            const n = branchCounts.get(name) ?? 0;
+            item.description = `(${n})`;
             items.push(item);
         }
         if (names.length > limit) {
@@ -1362,6 +1367,29 @@ async function listRemoteNames(repo) {
 }
 async function countRemotesInRepo(repo) {
     return (await listRemoteNames(repo)).length;
+}
+/** 各 remote 下 `refs/remotes/<remote>/…` 的 ref 条数（与展开后列表一致，一次扫描）。 */
+async function countRemoteTrackingBranchesPerRemote(repo) {
+    const counts = new Map();
+    try {
+        const { stdout } = await execFileAsync("git", ["for-each-ref", "refs/remotes", "--format=%(refname:short)"], { cwd: repo, maxBuffer: 1024 * 1024 });
+        for (const line of stdout.split(/\r?\n/)) {
+            const s = line.trim();
+            if (!s) {
+                continue;
+            }
+            const slash = s.indexOf("/");
+            if (slash <= 0) {
+                continue;
+            }
+            const remote = s.slice(0, slash);
+            counts.set(remote, (counts.get(remote) ?? 0) + 1);
+        }
+    }
+    catch {
+        /* ignore */
+    }
+    return counts;
 }
 async function listRemoteTrackingBranches(repo, remoteName) {
     const refPrefix = `refs/remotes/${remoteName}`;
