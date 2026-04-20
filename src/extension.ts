@@ -4,7 +4,13 @@ import { promisify } from "util";
 import { clearAuthorStylesStore } from "./authorStyles";
 import { registerCursorLineGitHint } from "./cursorLineGitHint";
 import { GitListTreeItem, GitListTreeProvider, resolveWorkspaceGitRoot } from "./gitListTreeProvider";
-import { makeEmptyDocUri, makeGitObjectUri, registerGitListDocumentProvider } from "./gitShowDocumentProvider";
+import {
+  makeEmptyDocUri,
+  makeGitObjectUri,
+  parseGitListRevUri,
+  registerGitListDocumentProvider,
+  workingTreeFileUri,
+} from "./gitShowDocumentProvider";
 
 const execFileAsync = promisify(execFile);
 
@@ -152,6 +158,38 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("gitList.refresh", () => provider.refresh())
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.refreshFileHistory", () => provider.refreshFileHistoryList())
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.loadMoreFileHistoryCommits", () =>
+      provider.loadMoreFileHistoryCommits()
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(() => {
+      provider.notifyFileHistoryContextChanged();
+    }),
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      const ed = vscode.window.activeTextEditor;
+      if (
+        ed &&
+        doc.uri.scheme === "file" &&
+        doc.uri.toString() === ed.document.uri.toString()
+      ) {
+        provider.maybeRefreshFileHistoryAfterSave(doc);
+      }
+    }),
+    vscode.workspace.onDidRenameFiles((e) => {
+      for (const { oldUri, newUri } of e.files) {
+        provider.onWorkspaceFileRenamed(oldUri, newUri);
+      }
+    })
+  );
+
+  provider.notifyFileHistoryContextChanged();
 
   context.subscriptions.push(
     vscode.commands.registerCommand("gitList.refreshCommits", () => provider.refreshCommitsList())
@@ -830,35 +868,103 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       const repo = item.repoRoot;
-      const path = item.relPath;
+      const relPath = item.relPath;
       let left: vscode.Uri;
       let right: vscode.Uri;
       let title: string;
 
       if (item.stashRef) {
-        left = makeGitObjectUri(repo, `${item.stashRef}^1:${path}`);
-        right = makeGitObjectUri(repo, `${item.stashRef}:${path}`);
-        title = `${diffPathBasename(path)} (${stashRefShortForTitle(item.stashRef)})`;
+        left = makeGitObjectUri(repo, `${item.stashRef}^1:${relPath}`, relPath);
+        right = makeGitObjectUri(repo, `${item.stashRef}:${relPath}`, relPath);
+        title = `${diffPathBasename(relPath)} (${stashRefShortForTitle(item.stashRef)})`;
       } else if (item.hash) {
         const h = item.hash;
         if (item.changeKind === "added") {
-          left = makeEmptyDocUri(repo, `empty-before-${path}`);
-          right = makeGitObjectUri(repo, `${h}:${path}`);
+          left = makeEmptyDocUri(repo, `empty-before-${relPath}`);
+          right = makeGitObjectUri(repo, `${h}:${relPath}`, relPath);
         } else if (item.changeKind === "deleted") {
-          left = makeGitObjectUri(repo, `${h}^:${path}`);
-          right = makeEmptyDocUri(repo, `empty-after-${path}`);
+          left = makeGitObjectUri(repo, `${h}^:${relPath}`, relPath);
+          right = makeEmptyDocUri(repo, `empty-after-${relPath}`);
         } else {
-          left = makeGitObjectUri(repo, `${h}^:${path}`);
-          right = makeGitObjectUri(repo, `${h}:${path}`);
+          left = makeGitObjectUri(repo, `${h}^:${relPath}`, relPath);
+          right = makeGitObjectUri(repo, `${h}:${relPath}`, relPath);
         }
-        title = `${diffPathBasename(path)} (${shortHashForTitle(h)})`;
+        title = `${diffPathBasename(relPath)} (${shortHashForTitle(h)})`;
       } else {
         return;
       }
 
-      await vscode.commands.executeCommand("vscode.diff", left, right, title);
+      await vscode.commands.executeCommand("vscode.diff", left, right, title, {
+        preview: true,
+      });
     })
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.openPatchFileInWorkspace", async (item?: GitListTreeItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target || target.kind !== "patchFile" || !target.repoRoot || !target.relPath) {
+        return;
+      }
+      const uri = workingTreeFileUri(target.repoRoot, target.relPath);
+      try {
+        await vscode.window.showTextDocument(uri, { preview: false });
+      } catch {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.openWorkingTreeFailed"));
+      }
+    })
+  );
+
+  function syncGitListDiffContext(): void {
+    let has = false;
+    for (const e of vscode.window.visibleTextEditors) {
+      if (parseGitListRevUri(e.document.uri)) {
+        has = true;
+        break;
+      }
+    }
+    void vscode.commands.executeCommand("setContext", "gitList.isGitListDiff", has);
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.openWorkingTreeFromDiff", async () => {
+      const ordered: vscode.Uri[] = [];
+      const pushUri = (u: vscode.Uri): void => {
+        const s = u.toString();
+        if (!ordered.some((x) => x.toString() === s)) {
+          ordered.push(u);
+        }
+      };
+      const active = vscode.window.activeTextEditor?.document.uri;
+      if (active) {
+        pushUri(active);
+      }
+      for (const ed of vscode.window.visibleTextEditors) {
+        pushUri(ed.document.uri);
+      }
+      for (const uri of ordered) {
+        const p = parseGitListRevUri(uri);
+        if (!p) {
+          continue;
+        }
+        const target = workingTreeFileUri(p.repoRoot, p.relPath);
+        try {
+          await vscode.window.showTextDocument(target, {
+            preview: false,
+            viewColumn: vscode.ViewColumn.Beside,
+          });
+          return;
+        } catch {
+          void vscode.window.showWarningMessage(vscode.l10n.t("gitList.openWorkingTreeFailed"));
+          return;
+        }
+      }
+      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.openWorkingTreeNoGitListDoc"));
+    }),
+    vscode.window.onDidChangeActiveTextEditor(() => syncGitListDiffContext()),
+    vscode.window.onDidChangeVisibleTextEditors(() => syncGitListDiffContext())
+  );
+  syncGitListDiffContext();
 
   void subscribeBuiltInGitEvents(context, () => provider.refresh());
 

@@ -163,6 +163,23 @@ function activate(context) {
     context.subscriptions.push(treeView.onDidExpandElement((e) => provider.onViewTreeElementExpanded(e.element)));
     context.subscriptions.push(treeView.onDidCollapseElement((e) => provider.onViewTreeElementCollapsed(e.element)));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.refresh", () => provider.refresh()));
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshFileHistory", () => provider.refreshFileHistoryList()));
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.loadMoreFileHistoryCommits", () => provider.loadMoreFileHistoryCommits()));
+    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
+        provider.notifyFileHistoryContextChanged();
+    }), vscode.workspace.onDidSaveTextDocument((doc) => {
+        const ed = vscode.window.activeTextEditor;
+        if (ed &&
+            doc.uri.scheme === "file" &&
+            doc.uri.toString() === ed.document.uri.toString()) {
+            provider.maybeRefreshFileHistoryAfterSave(doc);
+        }
+    }), vscode.workspace.onDidRenameFiles((e) => {
+        for (const { oldUri, newUri } of e.files) {
+            provider.onWorkspaceFileRenamed(oldUri, newUri);
+        }
+    }));
+    provider.notifyFileHistoryContextChanged();
     context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshCommits", () => provider.refreshCommitsList()));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshStash", () => provider.refreshStashList()));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshBranches", () => provider.refreshBranchesList()));
@@ -730,36 +747,97 @@ function activate(context) {
             return;
         }
         const repo = item.repoRoot;
-        const path = item.relPath;
+        const relPath = item.relPath;
         let left;
         let right;
         let title;
         if (item.stashRef) {
-            left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}^1:${path}`);
-            right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}:${path}`);
-            title = `${diffPathBasename(path)} (${stashRefShortForTitle(item.stashRef)})`;
+            left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}^1:${relPath}`, relPath);
+            right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}:${relPath}`, relPath);
+            title = `${diffPathBasename(relPath)} (${stashRefShortForTitle(item.stashRef)})`;
         }
         else if (item.hash) {
             const h = item.hash;
             if (item.changeKind === "added") {
-                left = (0, gitShowDocumentProvider_1.makeEmptyDocUri)(repo, `empty-before-${path}`);
-                right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}:${path}`);
+                left = (0, gitShowDocumentProvider_1.makeEmptyDocUri)(repo, `empty-before-${relPath}`);
+                right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}:${relPath}`, relPath);
             }
             else if (item.changeKind === "deleted") {
-                left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}^:${path}`);
-                right = (0, gitShowDocumentProvider_1.makeEmptyDocUri)(repo, `empty-after-${path}`);
+                left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}^:${relPath}`, relPath);
+                right = (0, gitShowDocumentProvider_1.makeEmptyDocUri)(repo, `empty-after-${relPath}`);
             }
             else {
-                left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}^:${path}`);
-                right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}:${path}`);
+                left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}^:${relPath}`, relPath);
+                right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${h}:${relPath}`, relPath);
             }
-            title = `${diffPathBasename(path)} (${shortHashForTitle(h)})`;
+            title = `${diffPathBasename(relPath)} (${shortHashForTitle(h)})`;
         }
         else {
             return;
         }
-        await vscode.commands.executeCommand("vscode.diff", left, right, title);
+        await vscode.commands.executeCommand("vscode.diff", left, right, title, {
+            preview: true,
+        });
     }));
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.openPatchFileInWorkspace", async (item) => {
+        const target = item ?? treeView.selection[0];
+        if (!target || target.kind !== "patchFile" || !target.repoRoot || !target.relPath) {
+            return;
+        }
+        const uri = (0, gitShowDocumentProvider_1.workingTreeFileUri)(target.repoRoot, target.relPath);
+        try {
+            await vscode.window.showTextDocument(uri, { preview: false });
+        }
+        catch {
+            void vscode.window.showWarningMessage(vscode.l10n.t("gitList.openWorkingTreeFailed"));
+        }
+    }));
+    function syncGitListDiffContext() {
+        let has = false;
+        for (const e of vscode.window.visibleTextEditors) {
+            if ((0, gitShowDocumentProvider_1.parseGitListRevUri)(e.document.uri)) {
+                has = true;
+                break;
+            }
+        }
+        void vscode.commands.executeCommand("setContext", "gitList.isGitListDiff", has);
+    }
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.openWorkingTreeFromDiff", async () => {
+        const ordered = [];
+        const pushUri = (u) => {
+            const s = u.toString();
+            if (!ordered.some((x) => x.toString() === s)) {
+                ordered.push(u);
+            }
+        };
+        const active = vscode.window.activeTextEditor?.document.uri;
+        if (active) {
+            pushUri(active);
+        }
+        for (const ed of vscode.window.visibleTextEditors) {
+            pushUri(ed.document.uri);
+        }
+        for (const uri of ordered) {
+            const p = (0, gitShowDocumentProvider_1.parseGitListRevUri)(uri);
+            if (!p) {
+                continue;
+            }
+            const target = (0, gitShowDocumentProvider_1.workingTreeFileUri)(p.repoRoot, p.relPath);
+            try {
+                await vscode.window.showTextDocument(target, {
+                    preview: false,
+                    viewColumn: vscode.ViewColumn.Beside,
+                });
+                return;
+            }
+            catch {
+                void vscode.window.showWarningMessage(vscode.l10n.t("gitList.openWorkingTreeFailed"));
+                return;
+            }
+        }
+        void vscode.window.showInformationMessage(vscode.l10n.t("gitList.openWorkingTreeNoGitListDoc"));
+    }), vscode.window.onDidChangeActiveTextEditor(() => syncGitListDiffContext()), vscode.window.onDidChangeVisibleTextEditors(() => syncGitListDiffContext()));
+    syncGitListDiffContext();
     void subscribeBuiltInGitEvents(context, () => provider.refresh());
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration("git-list")) {

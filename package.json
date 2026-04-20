@@ -1,8 +1,8 @@
 {
   "name": "git-list",
   "displayName": "Git List",
-  "description": "Sidebar: Git commits, branches, remotes, and stashes — browse files and open diffs; paging, refresh, stash and branch actions.",
-  "version": "0.0.10",
+  "description": "Sidebar: commits, file history, branches, remotes, stashes — browse files and open diffs; paging, refresh, fetch, stash and branch actions.",
+  "version": "0.0.11",
   "author": "liuyuanfan",
   "publisher": "liuyuanfan",
   "license": "MIT",
@@ -33,6 +33,10 @@
     "onStartupFinished",
     "onView:gitListView",
     "onCommand:gitList.clearAuthorColors",
+    "onCommand:gitList.openPatchFileInWorkspace",
+    "onCommand:gitList.openWorkingTreeFromDiff",
+    "onCommand:gitList.refreshFileHistory",
+    "onCommand:gitList.loadMoreFileHistoryCommits",
     "onCommand:gitList.refreshCommits",
     "onCommand:gitList.refreshStash",
     "onCommand:gitList.createBranchFromCommit",
@@ -128,6 +132,25 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "gitList.openPatchFileInWorkspace",
+        "title": "%git-list.command.openPatchFileInWorkspace%",
+        "icon": "$(file)"
+      },
+      {
+        "command": "gitList.openWorkingTreeFromDiff",
+        "title": "%git-list.command.openWorkingTreeFromDiff%",
+        "icon": "$(file)"
+      },
+      {
+        "command": "gitList.refreshFileHistory",
+        "title": "%git-list.command.refreshFileHistory%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitList.loadMoreFileHistoryCommits",
+        "title": "Git List: Load more file history"
+      },
+      {
         "command": "gitList.refreshCommits",
         "title": "%git-list.command.refreshCommits%",
         "icon": "$(refresh)"
@@ -208,6 +231,13 @@
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "gitList.openWorkingTreeFromDiff",
+          "when": "gitList.isGitListDiff",
+          "group": "navigation@8"
+        }
+      ],
       "view/title": [
         {
           "command": "gitList.refresh",
@@ -219,6 +249,11 @@
         {
           "command": "gitList.refreshCommits",
           "when": "view == gitListView && viewItem == gitListSectionCommits",
+          "group": "inline"
+        },
+        {
+          "command": "gitList.refreshFileHistory",
+          "when": "view == gitListView && viewItem == gitListSectionFileHistory",
           "group": "inline"
         },
         {
@@ -249,6 +284,11 @@
         {
           "command": "gitList.refreshRemoteBranches",
           "when": "view == gitListView && viewItem == gitListRemote",
+          "group": "inline"
+        },
+        {
+          "command": "gitList.openPatchFileInWorkspace",
+          "when": "view == gitListView && viewItem == gitListPatchFile",
           "group": "inline"
         },
         {

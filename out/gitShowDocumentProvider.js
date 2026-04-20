@@ -34,14 +34,38 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GIT_LIST_DOC_SCHEME = void 0;
+exports.parseGitListRevUri = parseGitListRevUri;
+exports.workingTreeFileUri = workingTreeFileUri;
 exports.registerGitListDocumentProvider = registerGitListDocumentProvider;
 exports.makeGitObjectUri = makeGitObjectUri;
 exports.makeEmptyDocUri = makeEmptyDocUri;
 const vscode = __importStar(require("vscode"));
+const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 const util_1 = require("util");
 const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
 exports.GIT_LIST_DOC_SCHEME = "git-list";
+/** 从 git-list 文档 URI 解析仓库与相对路径（用于打开工作区原文件）。 */
+function parseGitListRevUri(uri) {
+    if (uri.scheme !== exports.GIT_LIST_DOC_SCHEME) {
+        return undefined;
+    }
+    try {
+        const q = JSON.parse(uri.query);
+        if (q.empty || !q.cwd || !q.rel) {
+            return undefined;
+        }
+        return { repoRoot: q.cwd, relPath: q.rel };
+    }
+    catch {
+        return undefined;
+    }
+}
+/** 工作区绝对路径（与当前平台一致）。 */
+function workingTreeFileUri(repoRoot, relPosix) {
+    const parts = relPosix.split("/").filter((s) => s.length > 0);
+    return vscode.Uri.file(path.join(repoRoot, ...parts));
+}
 /** 为 git show <ref>:path 提供虚拟文档内容，供 vscode.diff 左侧/右侧使用。 */
 function registerGitListDocumentProvider(context) {
     const provider = {
@@ -74,11 +98,15 @@ function registerGitListDocumentProvider(context) {
     };
     context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(exports.GIT_LIST_DOC_SCHEME, provider));
 }
-function makeGitObjectUri(repoRoot, gitShowArg) {
+function makeGitObjectUri(repoRoot, gitShowArg, relPathPosix) {
+    const payload = { cwd: repoRoot, o: gitShowArg };
+    if (relPathPosix !== undefined) {
+        payload.rel = relPathPosix;
+    }
     return vscode.Uri.from({
         scheme: exports.GIT_LIST_DOC_SCHEME,
         path: "/rev",
-        query: JSON.stringify({ cwd: repoRoot, o: gitShowArg }),
+        query: JSON.stringify(payload),
     });
 }
 function makeEmptyDocUri(repoRoot, tag) {

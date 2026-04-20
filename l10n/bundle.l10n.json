@@ -81,5 +81,9 @@
   "gitList.fetchAllRemotesProgressTitle": "Fetching all remotes…",
   "gitList.fetchOneRemoteProgressTitle": "Fetching {0}…",
   "gitList.fetchAllRemotesFailed": "Could not fetch all remotes",
-  "gitList.fetchOneRemoteFailed": "Could not fetch remote"
+  "gitList.fetchOneRemoteFailed": "Could not fetch remote",
+  "gitList.fileHistoryOpenFileHint": "Open a saved file in the editor to see commits that touched it.",
+  "gitList.fileHistoryNotInRepo": "Active file is not inside a Git repository.",
+  "gitList.openWorkingTreeFailed": "Could not open the working tree file (missing or not on disk).",
+  "gitList.openWorkingTreeNoGitListDoc": "No Git List diff pane with a file path is visible. Open a diff from Git List first."
 }

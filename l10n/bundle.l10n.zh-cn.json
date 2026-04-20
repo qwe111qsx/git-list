@@ -81,5 +81,9 @@
   "gitList.fetchAllRemotesProgressTitle": "正在获取所有远程…",
   "gitList.fetchOneRemoteProgressTitle": "正在获取远程 {0}…",
   "gitList.fetchAllRemotesFailed": "无法获取所有远程",
-  "gitList.fetchOneRemoteFailed": "无法获取该远程"
+  "gitList.fetchOneRemoteFailed": "无法获取该远程",
+  "gitList.fileHistoryOpenFileHint": "请在编辑器中打开已保存的工作区文件以查看相关提交。",
+  "gitList.fileHistoryNotInRepo": "当前活动文件不在 Git 仓库内。",
+  "gitList.openWorkingTreeFailed": "无法打开工作区文件（不存在或未保存到磁盘）。",
+  "gitList.openWorkingTreeNoGitListDoc": "当前没有可见的 Git List 差异视图。请先从 Git List 打开一个文件差异。"
 }

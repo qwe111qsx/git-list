@@ -1,5 +1,8 @@
 {
   "git-list.command.refresh": "刷新",
+  "git-list.command.openPatchFileInWorkspace": "打开工作区源文件",
+  "git-list.command.openWorkingTreeFromDiff": "打开工作区源文件",
+  "git-list.command.refreshFileHistory": "刷新文件历史",
   "git-list.command.refreshCommits": "刷新提交列表",
   "git-list.command.refreshStash": "刷新贮藏列表",
   "git-list.command.refreshBranches": "刷新分支列表",

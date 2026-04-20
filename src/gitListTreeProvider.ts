@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { getAuthorAccountIconUri } from "./authorStyles";
@@ -44,12 +45,16 @@ function readRemotesPageSize(): number {
 /** 单次提交/stash 下列出的最大文件数（避免超大 patch 卡 UI）。 */
 const MAX_PATCH_FILES = 400;
 
+/** File History 分区标题固定英文，不做 l10n。 */
+const FILE_HISTORY_SECTION_BASE = "File History";
+
 /** 树节点类型：分组、提交/贮藏、变更文件叶子、提示、加载更多。 */
 type NodeKind =
   | "sectionBranches"
   | "sectionCommits"
   | "sectionStash"
   | "sectionRemotes"
+  | "sectionFileHistory"
   | "remote"
   | "branch"
   | "commit"
@@ -60,6 +65,7 @@ type NodeKind =
   | "loadMoreBranches"
   | "loadMoreRemotes"
   | "loadMoreRemoteBranches"
+  | "loadMoreFileHistoryCommits"
   | "loadMoreStash"
   | "patchFile"
   | "patchFolder";
@@ -107,7 +113,9 @@ export class GitListTreeItem extends vscode.TreeItem {
     /** 本地分支省略；远程跟踪分支为 `"remote"`，用于 contextValue / id。 */
     public readonly branchSource?: "local" | "remote",
     /** 区分根「Commits」与分支下列表，避免同一提交在树中出现重复 TreeItem.id。 */
-    public readonly commitListIdPrefix?: string
+    public readonly commitListIdPrefix?: string,
+    /** `loadMoreFileHistoryCommits` 携带相对仓库路径。 */
+    public readonly fileHistoryRelPath?: string
   ) {
     super(label, collapsibleState);
     if (kind === "commit") {
@@ -167,6 +175,9 @@ export class GitListTreeItem extends vscode.TreeItem {
     } else if (kind === "sectionCommits") {
       this.iconPath = new vscode.ThemeIcon("history");
       this.contextValue = "gitListSectionCommits";
+    } else if (kind === "sectionFileHistory") {
+      this.iconPath = new vscode.ThemeIcon("history");
+      this.contextValue = "gitListSectionFileHistory";
     } else if (kind === "sectionStash") {
       this.iconPath = new vscode.ThemeIcon("inbox");
       this.contextValue = "gitListSectionStash";
@@ -208,9 +219,17 @@ export class GitListTreeItem extends vscode.TreeItem {
         title: vscode.l10n.t("gitList.loadMoreCommand"),
         arguments: [this],
       };
+    } else if (kind === "loadMoreFileHistoryCommits") {
+      this.iconPath = undefined;
+      this.command = {
+        command: "gitList.loadMoreFileHistoryCommits",
+        title: vscode.l10n.t("gitList.loadMoreCommand"),
+        arguments: [this],
+      };
     } else if (kind === "patchFolder") {
       this.iconPath = new vscode.ThemeIcon("folder");
     } else if (kind === "patchFile") {
+      this.contextValue = "gitListPatchFile";
       const ck = changeKind ?? "modified";
       if (relPath) {
         this.description = relPath;
@@ -294,17 +313,32 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
     "Commits",
     vscode.TreeItemCollapsibleState.Collapsed
   );
+  private readonly rootSectionFileHistory = new GitListTreeItem(
+    "sectionFileHistory",
+    FILE_HISTORY_SECTION_BASE,
+    vscode.TreeItemCollapsibleState.Collapsed
+  );
   private readonly rootSectionStash = new GitListTreeItem(
     "sectionStash",
     "Stash (0)",
     vscode.TreeItemCollapsibleState.Collapsed
   );
 
+  /** 当前活动文件在「File History」分区下列出的提交条数上限。 */
+  private fileHistoryCommitLimit: number;
+
+  /**
+   * 列出历史的锚定源文件（规范化磁盘路径）。仅当活动编辑器为仓库内 `file://` 时更新；
+   * 切换到 diff、输出等时不变，继续显示该文件的提交列表。
+   */
+  private fileHistoryAnchorFsPath: string | undefined;
+
   constructor(private readonly extContext: vscode.ExtensionContext) {
     this.commitLimit = readCommitsPageSize();
     this.stashLimit = readStashPageSize();
     this.branchesListLimit = readBranchesPageSize();
     this.remotesListLimit = readRemotesPageSize();
+    this.fileHistoryCommitLimit = readCommitsPageSize();
   }
 
   /** 与侧栏 TreeView 联动，删除/刷新后仍按记忆恢复展开。 */
@@ -322,6 +356,9 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
         break;
       case "sectionCommits":
         setTreeItemCollapsible(this.rootSectionCommits, vscode.TreeItemCollapsibleState.Expanded);
+        break;
+      case "sectionFileHistory":
+        setTreeItemCollapsible(this.rootSectionFileHistory, vscode.TreeItemCollapsibleState.Expanded);
         break;
       case "sectionRemotes":
         setTreeItemCollapsible(this.rootSectionRemotes, vscode.TreeItemCollapsibleState.Expanded);
@@ -370,6 +407,9 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       case "sectionCommits":
         setTreeItemCollapsible(this.rootSectionCommits, vscode.TreeItemCollapsibleState.Collapsed);
         break;
+      case "sectionFileHistory":
+        setTreeItemCollapsible(this.rootSectionFileHistory, vscode.TreeItemCollapsibleState.Collapsed);
+        break;
       case "sectionRemotes":
         setTreeItemCollapsible(this.rootSectionRemotes, vscode.TreeItemCollapsibleState.Collapsed);
         break;
@@ -412,6 +452,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
     setTreeItemCollapsible(this.rootSectionBranches, vscode.TreeItemCollapsibleState.Collapsed);
     setTreeItemCollapsible(this.rootSectionRemotes, vscode.TreeItemCollapsibleState.Collapsed);
     setTreeItemCollapsible(this.rootSectionCommits, vscode.TreeItemCollapsibleState.Collapsed);
+    setTreeItemCollapsible(this.rootSectionFileHistory, vscode.TreeItemCollapsibleState.Collapsed);
   }
 
   refresh(): void {
@@ -419,6 +460,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
     this.stashLimit = readStashPageSize();
     this.branchesListLimit = readBranchesPageSize();
     this.remotesListLimit = readRemotesPageSize();
+    this.fileHistoryCommitLimit = readCommitsPageSize();
     this.branchCommitLimits.clear();
     this.remoteBranchesListLimits.clear();
     this.diffCache.clear();
@@ -432,6 +474,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
     this.stashLimit = readStashPageSize();
     this.branchesListLimit = readBranchesPageSize();
     this.remotesListLimit = readRemotesPageSize();
+    this.fileHistoryCommitLimit = readCommitsPageSize();
     this.branchCommitLimits.clear();
     this.remoteBranchesListLimits.clear();
     this.diffCache.clear();
@@ -442,6 +485,98 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
   loadMoreCommits(): void {
     this.commitLimit += readCommitsPageSize();
     this._onDidChangeTreeData.fire(this.rootSectionCommits);
+  }
+
+  loadMoreFileHistoryCommits(): void {
+    this.fileHistoryCommitLimit += readCommitsPageSize();
+    this._onDidChangeTreeData.fire(this.rootSectionFileHistory);
+  }
+
+  /**
+   * 若当前活动编辑器是仓库内源文件，则更新锚点并刷新 File History；否则保持锚点与列表不变（例如刚切到 diff）。
+   */
+  notifyFileHistoryContextChanged(): void {
+    void this.tryUpdateFileHistoryAnchorFromActiveEditor().then((changed) => {
+      if (!changed) {
+        return;
+      }
+      void this.updateFileHistorySectionTitleFromAnchor().then(() => {
+        this.fileHistoryCommitLimit = readCommitsPageSize();
+        this._onDidChangeTreeData.fire(this.rootSectionFileHistory);
+      });
+    });
+  }
+
+  /** @returns 是否新锚定了另一文件（需刷新分区） */
+  private async tryUpdateFileHistoryAnchorFromActiveEditor(): Promise<boolean> {
+    const ed = vscode.window.activeTextEditor;
+    if (!ed || ed.document.uri.scheme !== "file") {
+      return false;
+    }
+    const fsPath = path.normalize(ed.document.uri.fsPath);
+    const fileRepo = await getGitRoot(path.dirname(fsPath));
+    if (!fileRepo) {
+      return false;
+    }
+    const rel = path.relative(fileRepo, fsPath).split(path.sep).join("/");
+    if (!rel || rel.startsWith("..")) {
+      return false;
+    }
+    if (this.fileHistoryAnchorFsPath === fsPath) {
+      return false;
+    }
+    this.fileHistoryAnchorFsPath = fsPath;
+    return true;
+  }
+
+  private async updateFileHistorySectionTitleFromAnchor(): Promise<void> {
+    const anchor = this.fileHistoryAnchorFsPath;
+    if (!anchor) {
+      this.rootSectionFileHistory.label = FILE_HISTORY_SECTION_BASE;
+      return;
+    }
+    const bn = path.basename(anchor);
+    this.rootSectionFileHistory.label = `${FILE_HISTORY_SECTION_BASE} (${bn})`;
+  }
+
+  /** 工作区内重命名：若命中锚定文件则更新路径并刷新列表。 */
+  onWorkspaceFileRenamed(oldUri: vscode.Uri, newUri: vscode.Uri): void {
+    if (oldUri.scheme !== "file" || newUri.scheme !== "file") {
+      return;
+    }
+    const o = path.normalize(oldUri.fsPath);
+    const n = path.normalize(newUri.fsPath);
+    if (this.fileHistoryAnchorFsPath !== o) {
+      return;
+    }
+    this.fileHistoryAnchorFsPath = n;
+    void this.updateFileHistorySectionTitleFromAnchor().then(() => {
+      this._onDidChangeTreeData.fire(this.rootSectionFileHistory);
+    });
+  }
+
+  /** 与 Commits 分区刷新类似：重置 File History 分页并刷新。 */
+  refreshFileHistoryList(): void {
+    this.fileHistoryCommitLimit = readCommitsPageSize();
+    void this.updateFileHistorySectionTitleFromAnchor().then(() => {
+      this._onDidChangeTreeData.fire(this.rootSectionFileHistory);
+    });
+  }
+
+  /** 仅重新读取 File History 提交列表（不重置分页与标题）；仅当保存的是锚定文件时由扩展调用。 */
+  refreshFileHistoryData(): void {
+    this._onDidChangeTreeData.fire(this.rootSectionFileHistory);
+  }
+
+  /** 保存后：仅当保存文档为当前 File History 锚定文件时才刷新列表。 */
+  maybeRefreshFileHistoryAfterSave(doc: vscode.TextDocument): void {
+    if (doc.uri.scheme !== "file" || !this.fileHistoryAnchorFsPath) {
+      return;
+    }
+    if (path.normalize(doc.uri.fsPath) !== this.fileHistoryAnchorFsPath) {
+      return;
+    }
+    this.refreshFileHistoryData();
   }
 
   loadMoreStashes(): void {
@@ -773,6 +908,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       await this.syncSectionCountLabels(undefined);
       return [
         this.rootSectionCommits,
+        this.rootSectionFileHistory,
         this.rootSectionBranches,
         this.rootSectionRemotes,
         this.rootSectionStash,
@@ -784,6 +920,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       await this.syncSectionCountLabels(repo);
       return [
         this.rootSectionCommits,
+        this.rootSectionFileHistory,
         this.rootSectionBranches,
         this.rootSectionRemotes,
         this.rootSectionStash,
@@ -820,7 +957,8 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
         readCommitsPageSize(),
         element.branchName,
         element.branchName,
-        this.expandedCommitFullHashes
+        this.expandedCommitFullHashes,
+        undefined
       );
     }
     if (element.kind === "sectionCommits") {
@@ -834,7 +972,32 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
         readCommitsPageSize(),
         undefined,
         undefined,
-        this.expandedCommitFullHashes
+        this.expandedCommitFullHashes,
+        undefined
+      );
+    }
+    if (element.kind === "sectionFileHistory") {
+      const anchor = this.fileHistoryAnchorFsPath;
+      if (!anchor) {
+        return [emptyLeaf(vscode.l10n.t("gitList.fileHistoryOpenFileHint"))];
+      }
+      const fileRepo = await getGitRoot(path.dirname(anchor));
+      if (!fileRepo) {
+        return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+      }
+      const rel = path.relative(fileRepo, anchor).split(path.sep).join("/");
+      if (!rel || rel.startsWith("..")) {
+        return [emptyLeaf(vscode.l10n.t("gitList.fileHistoryNotInRepo"))];
+      }
+      return loadCommits(
+        this.extContext,
+        fileRepo,
+        this.fileHistoryCommitLimit,
+        readCommitsPageSize(),
+        undefined,
+        undefined,
+        this.expandedCommitFullHashes,
+        rel
       );
     }
     if (element.kind === "sectionStash") {
@@ -1840,7 +2003,7 @@ function applyStashRowListFields(
   item.tooltip = `${stashRef} — ${label}`;
 }
 
-/** @param logRevision 传入时等价于 `git log <rev>`；否则为当前 HEAD。 @param loadMoreForBranch 有值时「加载更多」走分支分页。 */
+/** @param logRevision 传入时等价于 `git log <rev>`；否则为当前 HEAD。 @param loadMoreForBranch 有值时「加载更多」走分支分页。 @param fileHistoryRelPath 有值时按路径列提交（`--all --follow`）。 */
 async function loadCommits(
   context: vscode.ExtensionContext,
   repo: string,
@@ -1848,28 +2011,50 @@ async function loadCommits(
   pageSizeForLabel: number,
   logRevision?: string,
   loadMoreForBranch?: string,
-  commitExpanded?: Set<string>
+  commitExpanded?: Set<string>,
+  fileHistoryRelPath?: string
 ): Promise<GitListTreeItem[]> {
   try {
-    const commitListIdPrefix =
-      loadMoreForBranch !== undefined ? `branch:${loadMoreForBranch}` : "root";
+    let commitListIdPrefix: string;
+    if (fileHistoryRelPath !== undefined) {
+      commitListIdPrefix = `fileHistory:${encodeURIComponent(fileHistoryRelPath)}`;
+    } else if (loadMoreForBranch !== undefined) {
+      commitListIdPrefix = `branch:${loadMoreForBranch}`;
+    } else {
+      commitListIdPrefix = "root";
+    }
     const fetchCount = String(displayLimit + 1);
-    const logArgs = logRevision
-      ? [
-          "log",
-          logRevision,
-          "-n",
-          fetchCount,
-          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
-          "--numstat",
-        ]
-      : [
-          "log",
-          "-n",
-          fetchCount,
-          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
-          "--numstat",
-        ];
+    let logArgs: string[];
+    if (fileHistoryRelPath !== undefined) {
+      logArgs = [
+        "log",
+        "--all",
+        "--follow",
+        "-n",
+        fetchCount,
+        "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+        "--numstat",
+        "--",
+        fileHistoryRelPath,
+      ];
+    } else if (logRevision) {
+      logArgs = [
+        "log",
+        logRevision,
+        "-n",
+        fetchCount,
+        "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+        "--numstat",
+      ];
+    } else {
+      logArgs = [
+        "log",
+        "-n",
+        fetchCount,
+        "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+        "--numstat",
+      ];
+    }
     const { stdout } = await execFileAsync("git", logArgs, {
       cwd: repo,
       maxBuffer: 10 * 1024 * 1024,
@@ -1914,11 +2099,34 @@ async function loadCommits(
         undefined,
         undefined,
         undefined,
-        commitListIdPrefix
+        commitListIdPrefix,
+        undefined
       );
     });
     if (hasMore) {
-      if (loadMoreForBranch) {
+      if (fileHistoryRelPath !== undefined) {
+        items.push(
+          new GitListTreeItem(
+            "loadMoreFileHistoryCommits",
+            vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
+            vscode.TreeItemCollapsibleState.None,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            fileHistoryRelPath
+          )
+        );
+      } else if (loadMoreForBranch) {
         items.push(
           new GitListTreeItem(
             "loadMoreBranchCommits",
@@ -1934,6 +2142,7 @@ async function loadCommits(
             undefined,
             undefined,
             loadMoreForBranch,
+            undefined,
             undefined,
             undefined,
             undefined
