@@ -42,6 +42,7 @@ const authorStyles_1 = require("./authorStyles");
 const cursorLineGitHint_1 = require("./cursorLineGitHint");
 const gitListTreeProvider_1 = require("./gitListTreeProvider");
 const gitShowDocumentProvider_1 = require("./gitShowDocumentProvider");
+const openCommitFileDiff_1 = require("./openCommitFileDiff");
 const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
 const GIT_ERROR_DETAIL_MAX = 12000;
 let gitListOutput;
@@ -740,6 +741,21 @@ function activate(context) {
         }
         catch (err) {
             showGitErrorMessage("gitList.createBranchFailed", err);
+        }
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.openCursorLineCommitFileDiff", async (payload) => {
+        const p = (Array.isArray(payload) ? payload[0] : payload);
+        const repo = p?.repo?.trim();
+        const relPath = p?.relPath?.trim();
+        const commitHash = p?.commitHash?.trim();
+        if (!repo || !relPath || !commitHash) {
+            return;
+        }
+        try {
+            await (0, openCommitFileDiff_1.openCommitFileDiff)(repo, relPath, commitHash);
+        }
+        catch {
+            void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cursorLineOpenCommitDiffFailed"));
         }
     }));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.openPatchFileDiff", async (item) => {

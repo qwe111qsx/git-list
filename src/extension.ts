@@ -11,6 +11,7 @@ import {
   registerGitListDocumentProvider,
   workingTreeFileUri,
 } from "./gitShowDocumentProvider";
+import { openCommitFileDiff } from "./openCommitFileDiff";
 
 const execFileAsync = promisify(execFile);
 
@@ -860,6 +861,28 @@ export function activate(context: vscode.ExtensionContext): void {
         showGitErrorMessage("gitList.createBranchFailed", err);
       }
     })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "gitList.openCursorLineCommitFileDiff",
+      async (payload?: { repo?: string; relPath?: string; commitHash?: string } | unknown[]) => {
+        const p = (Array.isArray(payload) ? payload[0] : payload) as
+          | { repo?: string; relPath?: string; commitHash?: string }
+          | undefined;
+        const repo = p?.repo?.trim();
+        const relPath = p?.relPath?.trim();
+        const commitHash = p?.commitHash?.trim();
+        if (!repo || !relPath || !commitHash) {
+          return;
+        }
+        try {
+          await openCommitFileDiff(repo, relPath, commitHash);
+        } catch {
+          void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cursorLineOpenCommitDiffFailed"));
+        }
+      }
+    )
   );
 
   context.subscriptions.push(

@@ -21,10 +21,11 @@
   "git-list.command.showRepoGitStatus": "Git List: 查看仓库状态",
   "git-list.command.abortMerge": "Git List: 中止合并",
   "git-list.command.abortRebase": "Git List: 中止变基",
+  "git-list.command.openCursorLineCommitFileDiff": "Git List: 打开光标行提示中的提交文件差异",
   "git-list.config.commitsPageSize": "首次打开与每次点击「加载更多」时获取的提交条数。",
   "git-list.config.stashPageSize": "首次打开与每次点击「加载更多」时获取的贮藏条数。",
   "git-list.config.branchesPageSize": "首次展开 Branches 与每次「加载更多」时列出的本地分支条数；各远程下的跟踪分支列表分页与此相同。",
   "git-list.config.remotesPageSize": "首次展开 Remotes 分区与在该分区每次「加载更多」时列出的远程名称条数（默认 10）。各远程下的跟踪分支列表使用上面的 Branches 分页配置。",
-  "git-list.config.showCursorLineGitHint": "在编辑器当前行末尾显示：当前分支、该行 git blame 作者、该次修改时间。",
+  "git-list.config.showCursorLineGitHint": "在当前行后显示由 git name-rev 解析的引用名、作者、时间。悬停可查看短/长哈希、完整提交说明，以及「预览该提交中此文件差异」链接。",
   "git-list.config.cursorLineGitHintPreloadMaxLines": "对每个文件用一次 git blame 预加载前 N 行的信息，光标在该范围内移动时更快。0 表示不预加载，仅按需 blame 当前行。"
 }

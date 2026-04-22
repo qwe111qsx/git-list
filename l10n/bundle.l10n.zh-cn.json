@@ -85,5 +85,13 @@
   "gitList.fileHistoryOpenFileHint": "请在编辑器中打开已保存的工作区文件以查看相关提交。",
   "gitList.fileHistoryNotInRepo": "当前活动文件不在 Git 仓库内。",
   "gitList.openWorkingTreeFailed": "无法打开工作区文件（不存在或未保存到磁盘）。",
-  "gitList.openWorkingTreeNoGitListDoc": "当前没有可见的 Git List 差异视图。请先从 Git List 打开一个文件差异。"
+  "gitList.openWorkingTreeNoGitListDoc": "当前没有可见的 Git List 差异视图。请先从 Git List 打开一个文件差异。",
+  "gitList.cursorLineGitHintUncommitted": "未提交",
+  "gitList.cursorLineGitHintHoverUncommitted": "该行尚未提交（工作区或暂存区变更）。",
+  "gitList.cursorLineGitHintNoSubject": "（无说明）",
+  "gitList.cursorLineGitHintHoverShortHash": "短哈希",
+  "gitList.cursorLineGitHintHoverLongHash": "长哈希",
+  "gitList.cursorLineGitHintHoverCommitMessage": "提交说明",
+  "gitList.cursorLineGitHintPreviewDiff": "预览该提交中此文件的差异",
+  "gitList.cursorLineOpenCommitDiffFailed": "无法打开该提交中此文件的差异视图。"
 }

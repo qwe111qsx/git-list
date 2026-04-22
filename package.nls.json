@@ -23,11 +23,12 @@
   "git-list.command.showRepoGitStatus": "Git List: Show Repository Status",
   "git-list.command.abortMerge": "Git List: Abort Merge",
   "git-list.command.abortRebase": "Git List: Abort Rebase",
+  "git-list.command.openCursorLineCommitFileDiff": "Git List: Open commit file diff (from cursor line hint)",
   "git-list.config.title": "Git List",
   "git-list.config.commitsPageSize": "Number of commits to show at first open and for each \"Load more\" click.",
   "git-list.config.stashPageSize": "Number of stashes to show at first open and for each \"Load more\" click.",
   "git-list.config.branchesPageSize": "Number of local branches to show when Branches is first expanded and for each \"Load more\" click.",
   "git-list.config.remotesPageSize": "Number of remote names to show when Remotes is first expanded and for each \"Load more\" click there. Branches under each remote use Branches page size.",
-  "git-list.config.showCursorLineGitHint": "After the active line in the editor, show the current branch, git blame author, and last-change time for that line.",
+  "git-list.config.showCursorLineGitHint": "After the active line, show a name-rev–based ref label, blame author, and time. Hover for short/full hash, full commit message, and a link to preview this file’s diff in that commit.",
   "git-list.config.cursorLineGitHintPreloadMaxLines": "Preload git blame for the first N lines of each file (one git blame call) so moving the caret within that range is faster. 0 disables preloading (only the current line is blamed on demand)."
 }

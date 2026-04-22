@@ -2,14 +2,18 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { getCommitMessageBody } from "./openCommitFileDiff";
 
 const execFileAsync = promisify(execFile);
 
 const DEBOUNCE_MS = 220;
-const BRANCH_CACHE_MS = 4000;
+const NAME_REV_CACHE_MS = 45_000;
+const COMMIT_MSG_CACHE_MS = 45_000;
 const AUTHOR_MAX = 28;
 
 interface BlameLineInfo {
+  readonly commitHash: string;
+  readonly summary: string;
   readonly author: string;
   readonly authorTimeUnix: number;
 }
@@ -21,7 +25,8 @@ interface BlameCache {
   readonly lines: Map<number, BlameLineInfo>;
 }
 
-const branchCache = new Map<string, { value: string; at: number }>();
+const nameRevCache = new Map<string, { value: string; at: number }>();
+const commitMsgCache = new Map<string, { value: string; at: number }>();
 const blameCaches = new Map<string, BlameCache>();
 
 function cacheKey(uri: vscode.Uri): string {
@@ -54,33 +59,118 @@ async function getGitRoot(cwd: string): Promise<string | undefined> {
   }
 }
 
-async function getCurrentBranchLabel(repo: string): Promise<string> {
+function isAllZeroSha(hash: string): boolean {
+  return /^0+$/.test(hash);
+}
+
+function shortHashDisplay(full: string): string {
+  return full.length > 7 ? full.slice(0, 7) : full;
+}
+
+/**
+ * 行内显示：用 `git name-rev` 将提交挂到某条可读的 ref 上（如 main~2），再取 “分支段”
+ *（`remotes/origin/feat~1` → `feat`），比单纯 “含该 commit 的粗选分支名” 更贴近 blame 的祖先关系。
+ */
+async function getNameRevInlineLabel(repo: string, commitHash: string): Promise<string> {
+  if (isAllZeroSha(commitHash)) {
+    return vscode.l10n.t("gitList.cursorLineGitHintUncommitted");
+  }
+  const key = `${repo}\0name-rev\0${commitHash}`;
   const now = Date.now();
-  const hit = branchCache.get(repo);
-  if (hit && now - hit.at < BRANCH_CACHE_MS) {
+  const hit = nameRevCache.get(key);
+  if (hit && now - hit.at < NAME_REV_CACHE_MS) {
     return hit.value;
   }
-  let label = "?";
+  let label: string;
   try {
-    const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    const { stdout } = await execFileAsync("git", ["name-rev", "--name-only", commitHash], {
       cwd: repo,
       maxBuffer: 4096,
     });
-    const b = stdout.trim();
-    if (b === "HEAD") {
-      const { stdout: sh } = await execFileAsync("git", ["rev-parse", "--short", "HEAD"], {
-        cwd: repo,
-        maxBuffer: 4096,
-      });
-      label = sh.trim() || "HEAD";
+    const line = stdout.trim();
+    if (line) {
+      const refPart = line.split(/[~^]/)[0] ?? line;
+      let s = refPart.replace(/^remotes\//, "");
+      if (s.startsWith("tags/")) {
+        s = s.slice(5);
+      }
+      if (s.includes("/")) {
+        s = s.slice(s.lastIndexOf("/") + 1);
+      }
+      label = s || shortHashDisplay(commitHash);
     } else {
-      label = b;
+      label = shortHashDisplay(commitHash);
     }
   } catch {
-    label = "?";
+    label = shortHashDisplay(commitHash);
   }
-  branchCache.set(repo, { value: label, at: now });
+  nameRevCache.set(key, { value: label, at: now });
   return label;
+}
+
+async function getCommitMessageCached(repo: string, commitHash: string): Promise<string> {
+  const key = `${repo}\0msg\0${commitHash}`;
+  const now = Date.now();
+  const hit = commitMsgCache.get(key);
+  if (hit && now - hit.at < COMMIT_MSG_CACHE_MS) {
+    return hit.value;
+  }
+  const body = await getCommitMessageBody(repo, commitHash);
+  commitMsgCache.set(key, { value: body, at: now });
+  return body;
+}
+
+function buildBlameHoverMessage(
+  repo: string,
+  blame: BlameLineInfo,
+  relPosix: string,
+  fullMessage: string
+): vscode.MarkdownString {
+  const md = new vscode.MarkdownString();
+  md.isTrusted = true;
+  const short = shortHashDisplay(blame.commitHash);
+  md.appendMarkdown(
+    `- **${vscode.l10n.t("gitList.cursorLineGitHintHoverShortHash")}** \`${short}\`\n` +
+      `- **${vscode.l10n.t("gitList.cursorLineGitHintHoverLongHash")}** \`${blame.commitHash}\`\n\n`
+  );
+  const msg = (fullMessage || blame.summary).trim() || vscode.l10n.t("gitList.cursorLineGitHintNoSubject");
+  md.appendMarkdown(`**${vscode.l10n.t("gitList.cursorLineGitHintHoverCommitMessage")}**\n\n`);
+  md.appendText(msg);
+
+  const payload = { repo, relPath: relPosix, commitHash: blame.commitHash };
+  const args = encodeURIComponent(JSON.stringify([payload]));
+  md.appendMarkdown(
+    `\n\n[${vscode.l10n.t("gitList.cursorLineGitHintPreviewDiff")}](command:gitList.openCursorLineCommitFileDiff?${args})`
+  );
+  return md;
+}
+
+function buildUncommittedHover(): vscode.MarkdownString {
+  const md = new vscode.MarkdownString();
+  md.isTrusted = true;
+  md.appendMarkdown(vscode.l10n.t("gitList.cursorLineGitHintHoverUncommitted"));
+  return md;
+}
+
+async function resolveInlineBranchAndHover(
+  repo: string,
+  relPosix: string,
+  blame: BlameLineInfo
+): Promise<{ primaryBranch: string; hover: vscode.MarkdownString }> {
+  if (isAllZeroSha(blame.commitHash)) {
+    return {
+      primaryBranch: vscode.l10n.t("gitList.cursorLineGitHintUncommitted"),
+      hover: buildUncommittedHover(),
+    };
+  }
+  const [primaryBranch, fullMessage] = await Promise.all([
+    getNameRevInlineLabel(repo, blame.commitHash),
+    getCommitMessageCached(repo, blame.commitHash),
+  ]);
+  return {
+    primaryBranch,
+    hover: buildBlameHoverMessage(repo, blame, relPosix, fullMessage),
+  };
 }
 
 /** 解析 `git blame --line-porcelain -L a,b` 的整块输出 → 行号(1-based) → 信息 */
@@ -95,11 +185,13 @@ function parseBlamePorcelainMulti(stdout: string): Map<number, BlameLineInfo> {
       i++;
       continue;
     }
+    const commitHash = hm[1];
     const finalStart = parseInt(hm[3], 10);
     const numLines = hm[4] ? parseInt(hm[4], 10) : 1;
     i++;
     let author = "";
     let authorTime = 0;
+    let summary = "";
     while (i < lines.length && !lines[i].startsWith("\t")) {
       const L = lines[i];
       if (headerRe.test(L)) {
@@ -110,14 +202,19 @@ function parseBlamePorcelainMulti(stdout: string): Map<number, BlameLineInfo> {
         author = L.slice(7).trim();
       } else if (L.startsWith("author-time ")) {
         authorTime = parseInt(L.slice(12).trim(), 10) || 0;
+      } else if (L.startsWith("summary ")) {
+        summary = L.slice(8).trim();
       }
       i++;
     }
     let consumed = 0;
     while (i < lines.length && lines[i].startsWith("\t") && consumed < numLines) {
-      if (author) {
-        map.set(finalStart + consumed, { author, authorTimeUnix: authorTime });
-      }
+      map.set(finalStart + consumed, {
+        commitHash,
+        summary,
+        author,
+        authorTimeUnix: authorTime,
+      });
       i++;
       consumed++;
     }
@@ -218,7 +315,7 @@ async function getBlameForLine(
   return one;
 }
 
-/** 当前行尾：当前分支 · blame 作者 · 该次提交时间 */
+/** 行尾：name-rev 分支/引用段 · 作者 · 时间；悬停为短/长 hash、完整提交说明、预览 diff 链接 */
 export function registerCursorLineGitHint(context: vscode.ExtensionContext): void {
   const decType = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
@@ -253,13 +350,16 @@ export function registerCursorLineGitHint(context: vscode.ExtensionContext): voi
     doc: vscode.TextDocument,
     branch: string,
     line: number,
-    blame: BlameLineInfo
+    blame: BlameLineInfo,
+    hover: vscode.MarkdownString
   ): void => {
     const author = truncateAuthor(blame.author);
     const when = formatBlameTime(blame.authorTimeUnix);
     const contentText = `${branch} · ${author} · ${when}`;
     const range = doc.lineAt(line).range;
-    editor.setDecorations(decType, [{ range, renderOptions: { after: { contentText } } }]);
+    editor.setDecorations(decType, [
+      { range, hoverMessage: hover, renderOptions: { after: { contentText } } },
+    ]);
     decoratedEditor = editor;
   };
 
@@ -326,18 +426,15 @@ export function registerCursorLineGitHint(context: vscode.ExtensionContext): voi
             vscode.window.activeTextEditor === editor &&
             doc.version === versionAtFire
           ) {
-            const br = await getCurrentBranchLabel(repo);
+            const { primaryBranch, hover } = await resolveInlineBranchAndHover(repo, rel, b);
             if (mySeq === requestSeq && vscode.window.activeTextEditor === editor) {
-              paint(editor, doc, br, editor.selection.active.line, b);
+              paint(editor, doc, primaryBranch, editor.selection.active.line, b, hover);
             }
           }
         })();
       }
 
-      const [branch, blame] = await Promise.all([
-        getCurrentBranchLabel(repo),
-        getBlameForLine(repo, rel, lineNo, doc),
-      ]);
+      const blame = await getBlameForLine(repo, rel, lineNo, doc);
       if (mySeq !== requestSeq || vscode.window.activeTextEditor !== editor) {
         return;
       }
@@ -346,7 +443,11 @@ export function registerCursorLineGitHint(context: vscode.ExtensionContext): voi
         return;
       }
 
-      paint(editor, doc, branch, line, blame);
+      const { primaryBranch, hover } = await resolveInlineBranchAndHover(repo, rel, blame);
+      if (mySeq !== requestSeq || vscode.window.activeTextEditor !== editor) {
+        return;
+      }
+      paint(editor, doc, primaryBranch, line, blame, hover);
     })();
   };
 
@@ -391,6 +492,8 @@ export function registerCursorLineGitHint(context: vscode.ExtensionContext): voi
         if (!readEnabled() && decoratedEditor) {
           stripDecs(decoratedEditor);
         }
+        nameRevCache.clear();
+        commitMsgCache.clear();
         blameCaches.clear();
         schedule(vscode.window.activeTextEditor);
       }
@@ -399,7 +502,8 @@ export function registerCursorLineGitHint(context: vscode.ExtensionContext): voi
       if (debounce !== undefined) {
         clearTimeout(debounce);
       }
-      branchCache.clear();
+      nameRevCache.clear();
+      commitMsgCache.clear();
       blameCaches.clear();
     })
   );
