@@ -183,6 +183,39 @@ function activate(context) {
     provider.notifyFileHistoryContextChanged();
     context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshCommits", () => provider.refreshCommitsList()));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshStash", () => provider.refreshStashList()));
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.stashAllIncludeUntracked", async () => {
+        const repo = await (0, gitListTreeProvider_1.resolveWorkspaceGitRoot)();
+        if (!repo) {
+            void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+            return;
+        }
+        const message = await vscode.window.showInputBox({
+            title: vscode.l10n.t("gitList.stashAllUntrackedTitle"),
+            prompt: vscode.l10n.t("gitList.stashAllUntrackedPrompt"),
+            placeHolder: vscode.l10n.t("gitList.stashAllUntrackedPlaceholder"),
+            ignoreFocusOut: true,
+        });
+        if (message === undefined) {
+            return;
+        }
+        const trimmed = message.trim();
+        const args = ["stash", "push", "-u"];
+        if (trimmed.length > 0) {
+            args.push("-m", trimmed);
+        }
+        try {
+            await execFileAsync("git", args, {
+                cwd: repo,
+                maxBuffer: 1024 * 1024,
+            });
+            void vscode.window.showInformationMessage(vscode.l10n.t("gitList.stashAllUntrackedDone"));
+            provider.refreshStashList();
+            await vscode.commands.executeCommand("git.refresh").then(() => undefined, () => undefined);
+        }
+        catch (err) {
+            showGitErrorMessage("gitList.stashAllUntrackedFailed", err);
+        }
+    }));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshBranches", () => provider.refreshBranchesList()));
     async function runShowRepoGitStatus() {
         const repo = await (0, gitListTreeProvider_1.resolveWorkspaceGitRoot)();
@@ -743,6 +776,44 @@ function activate(context) {
             showGitErrorMessage("gitList.createBranchFailed", err);
         }
     }));
+    function resolveCommitOrStashHashes(target) {
+        if (target.kind === "commit") {
+            const long = target.commitMeta?.fullHash?.trim();
+            if (!long) {
+                return undefined;
+            }
+            const displayed = target.hash?.trim();
+            const short = displayed && displayed.length < long.length && /^[0-9a-f]+$/i.test(displayed)
+                ? displayed
+                : long.slice(0, 7);
+            return { short, long };
+        }
+        if (target.kind === "stash") {
+            const long = target.hash?.trim();
+            if (!long || !/^[0-9a-f]{7,64}$/i.test(long)) {
+                return undefined;
+            }
+            const short = long.length > 7 ? long.slice(0, 7) : long;
+            return { short, long };
+        }
+        return undefined;
+    }
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.copyCommitShortHash", async (item) => {
+        const target = item ?? treeView.selection[0];
+        const h = target ? resolveCommitOrStashHashes(target) : undefined;
+        if (!h) {
+            return;
+        }
+        await vscode.env.clipboard.writeText(h.short);
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.copyCommitFullHash", async (item) => {
+        const target = item ?? treeView.selection[0];
+        const h = target ? resolveCommitOrStashHashes(target) : undefined;
+        if (!h) {
+            return;
+        }
+        await vscode.env.clipboard.writeText(h.long);
+    }));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.openCursorLineCommitFileDiff", async (payload) => {
         const p = (Array.isArray(payload) ? payload[0] : payload);
         const repo = p?.repo?.trim();
@@ -768,8 +839,19 @@ function activate(context) {
         let right;
         let title;
         if (item.stashRef) {
-            left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}^1:${relPath}`, relPath);
-            right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}:${relPath}`, relPath);
+            const rightTip = item.stashRightGitShow ?? `${item.stashRef}:${relPath}`;
+            if (item.changeKind === "added") {
+                left = (0, gitShowDocumentProvider_1.makeEmptyDocUri)(repo, `empty-before-${relPath}`);
+                right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, rightTip, relPath);
+            }
+            else if (item.changeKind === "deleted") {
+                left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}^1:${relPath}`, relPath);
+                right = (0, gitShowDocumentProvider_1.makeEmptyDocUri)(repo, `empty-after-${relPath}`);
+            }
+            else {
+                left = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, `${item.stashRef}^1:${relPath}`, relPath);
+                right = (0, gitShowDocumentProvider_1.makeGitObjectUri)(repo, rightTip, relPath);
+            }
             title = `${diffPathBasename(relPath)} (${stashRefShortForTitle(item.stashRef)})`;
         }
         else if (item.hash) {

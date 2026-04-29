@@ -115,7 +115,9 @@ export class GitListTreeItem extends vscode.TreeItem {
     /** 区分根「Commits」与分支下列表，避免同一提交在树中出现重复 TreeItem.id。 */
     public readonly commitListIdPrefix?: string,
     /** `loadMoreFileHistoryCommits` 携带相对仓库路径。 */
-    public readonly fileHistoryRelPath?: string
+    public readonly fileHistoryRelPath?: string,
+    /** 贮藏中仅从 `stash^3`（未跟踪快照）可读的路径，对应 `git show` 的 `ref:path`（如 `stash@{0}^3:foo.txt`）。 */
+    public readonly stashRightGitShow?: string
   ) {
     super(label, collapsibleState);
     if (kind === "commit") {
@@ -1256,12 +1258,46 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       return cached;
     }
     try {
-      const { stdout } = await execFileAsync(
-        "git",
-        ["stash", "show", "-p", "--no-color", stashRef],
-        { cwd: repo, maxBuffer: 50 * 1024 * 1024 }
-      );
-      const entries = parsePatchFileEntries(stdout);
+      let entries: ParsedPatchFile[] = [];
+      /** 贮藏 2-/3-父结构：`diff ^1 stash` 不含仅位于 `stash^3` 的未跟踪快照。 */
+      try {
+        const { stdout } = await execFileAsync(
+          "git",
+          ["diff", "--name-status", `${stashRef}^1`, stashRef],
+          { cwd: repo, maxBuffer: 50 * 1024 * 1024 }
+        );
+        entries = parseNameStatus(stdout);
+      } catch {
+        entries = [];
+      }
+      const untrackedPaths = await listStashUntrackedParentPaths(repo, stashRef);
+      if (untrackedPaths.length > 0) {
+        entries = mergeStashEntriesWithUntrackedThirdParent(entries, untrackedPaths);
+      }
+      if (entries.length === 0) {
+        try {
+          const { stdout } = await execFileAsync(
+            "git",
+            ["stash", "show", "--name-status", stashRef],
+            { cwd: repo, maxBuffer: 50 * 1024 * 1024 }
+          );
+          entries = parseNameStatus(stdout);
+        } catch {
+          entries = [];
+        }
+      }
+      if (entries.length === 0) {
+        try {
+          const { stdout } = await execFileAsync(
+            "git",
+            ["stash", "show", "-p", "--no-color", stashRef],
+            { cwd: repo, maxBuffer: 50 * 1024 * 1024 }
+          );
+          entries = parsePatchFileEntries(stdout);
+        } catch {
+          entries = [];
+        }
+      }
       const items = buildPatchTreeItems(repo, undefined, stashRef, entries);
       this.diffCache.set(key, items);
       return items;
@@ -1522,6 +1558,11 @@ async function getGitRoot(cwd: string): Promise<string | undefined> {
 interface ParsedPatchFile {
   path: string;
   status: PatchChangeKind;
+  /**
+   * `git stash -u` 时部分路径只存在于贮藏第三个父提交 `stash^3`；
+   * 树列表与 `git show` 需用 `stash@{n}^3:path`，不能只用贮藏本体的 tree。
+   */
+  stashReadFromUntrackedParent?: boolean;
 }
 
 /** 从 unified diff 中解析 diff --git 得到文件路径与增/删/改。 */
@@ -1654,6 +1695,50 @@ function stripCommonPrefix(fullPath: string, prefix: string): string {
   return f;
 }
 
+/** `git stash -u` 第三条父线：列出未跟踪快照提交中的所有路径。 */
+async function listStashUntrackedParentPaths(repo: string, stashRef: string): Promise<string[]> {
+  try {
+    await execFileAsync("git", ["rev-parse", "--verify", `${stashRef}^3`], {
+      cwd: repo,
+      maxBuffer: 4096,
+    });
+  } catch {
+    return [];
+  }
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["ls-tree", "-r", "--name-only", `${stashRef}^3`],
+      { cwd: repo, maxBuffer: 50 * 1024 * 1024 }
+    );
+    return stdout
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((l) => l.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function mergeStashEntriesWithUntrackedThirdParent(
+  main: ParsedPatchFile[],
+  untrackedPaths: string[]
+): ParsedPatchFile[] {
+  const normPath = (p: string) => p.replace(/\\/g, "/");
+  const map = new Map<string, ParsedPatchFile>();
+  for (const e of main) {
+    const n = normPath(e.path);
+    map.set(n, { path: n, status: e.status });
+  }
+  for (const p of untrackedPaths) {
+    const n = normPath(p);
+    if (!map.has(n)) {
+      map.set(n, { path: n, status: "added", stashReadFromUntrackedParent: true });
+    }
+  }
+  return [...map.values()];
+}
+
 type ParsedWithRel = ParsedPatchFile & { rel: string };
 
 function makePatchFileTreeItem(
@@ -1661,7 +1746,8 @@ function makePatchFileTreeItem(
   hash: string | undefined,
   stashRef: string | undefined,
   fullPath: string,
-  status: PatchChangeKind
+  status: PatchChangeKind,
+  stashRightGitShowOverride?: string
 ): GitListTreeItem {
   const norm = fullPath.replace(/\\/g, "/");
   const base = norm.includes("/") ? norm.slice(norm.lastIndexOf("/") + 1) : norm;
@@ -1673,7 +1759,17 @@ function makePatchFileTreeItem(
     stashRef,
     repo,
     norm,
-    status
+    status,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    stashRightGitShowOverride
   );
 }
 
@@ -1693,7 +1789,12 @@ function buildPatchLevel(
       const dir = e.rel.slice(0, i);
       const restPath = e.rel.slice(i + 1);
       const list = dirMap.get(dir) ?? [];
-      list.push({ path: e.path, status: e.status, rel: restPath });
+      list.push({
+        path: e.path,
+        status: e.status,
+        rel: restPath,
+        stashReadFromUntrackedParent: e.stashReadFromUntrackedParent,
+      });
       dirMap.set(dir, list);
     }
   }
@@ -1724,7 +1825,17 @@ function buildPatchLevel(
   }
   filesHere.sort((a, b) => a.rel.localeCompare(b.rel));
   for (const f of filesHere) {
-    items.push(makePatchFileTreeItem(repo, hash, stashRef, f.path, f.status));
+    const n = f.path.replace(/\\/g, "/");
+    items.push(
+      makePatchFileTreeItem(
+        repo,
+        hash,
+        stashRef,
+        f.path,
+        f.status,
+        f.stashReadFromUntrackedParent && stashRef ? `${stashRef}^3:${n}` : undefined
+      )
+    );
   }
   return items;
 }
@@ -1757,7 +1868,15 @@ function buildPatchTreeItems(
 
   if (list.length === 1) {
     const e = list[0];
-    const oneFile = makePatchFileTreeItem(repo, hash, stashRef, normPaths[0], e.status);
+    const n0 = normPaths[0];
+    const oneFile = makePatchFileTreeItem(
+      repo,
+      hash,
+      stashRef,
+      n0,
+      e.status,
+      e.stashReadFromUntrackedParent && stashRef ? `${stashRef}^3:${n0}` : undefined
+    );
     return appendTruncation([oneFile]);
   }
 
@@ -1766,14 +1885,23 @@ function buildPatchTreeItems(
     path: normPaths[idx],
     status: e.status,
     rel: stripCommonPrefix(normPaths[idx], lca),
+    stashReadFromUntrackedParent: e.stashReadFromUntrackedParent,
   }));
   const flatOnly = relList.every((r) => r.rel.length > 0 && !r.rel.includes("/"));
   let items: GitListTreeItem[];
   if (flatOnly) {
     relList.sort((a, b) => a.rel.localeCompare(b.rel));
-    items = relList.map((r) =>
-      makePatchFileTreeItem(repo, hash, stashRef, r.path, r.status)
-    );
+    items = relList.map((r) => {
+      const n = r.path.replace(/\\/g, "/");
+      return makePatchFileTreeItem(
+        repo,
+        hash,
+        stashRef,
+        r.path,
+        r.status,
+        r.stashReadFromUntrackedParent && stashRef ? `${stashRef}^3:${n}` : undefined
+      );
+    });
   } else {
     items = buildPatchLevel(relList, repo, hash, stashRef);
   }

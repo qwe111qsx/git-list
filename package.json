@@ -2,7 +2,7 @@
   "name": "git-list",
   "displayName": "Git List",
   "description": "Sidebar: commits, file history, branches, remotes, stashes — browse files and open diffs; paging, refresh, fetch, stash and branch actions.",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "author": "liuyuanfan",
   "publisher": "liuyuanfan",
   "license": "MIT",
@@ -58,7 +58,8 @@
     "onCommand:gitList.showRepoGitStatus",
     "onCommand:gitList.abortMerge",
     "onCommand:gitList.abortRebase",
-    "onCommand:gitList.openCursorLineCommitFileDiff"
+    "onCommand:gitList.openCursorLineCommitFileDiff",
+    "onCommand:gitList.stashAllIncludeUntracked"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -233,9 +234,34 @@
       {
         "command": "gitList.openCursorLineCommitFileDiff",
         "title": "%git-list.command.openCursorLineCommitFileDiff%"
+      },
+      {
+        "command": "gitList.copyCommitShortHash",
+        "title": "%git-list.command.copyCommitShortHash%"
+      },
+      {
+        "command": "gitList.copyCommitFullHash",
+        "title": "%git-list.command.copyCommitFullHash%"
+      },
+      {
+        "command": "gitList.stashAllIncludeUntracked",
+        "title": "%git-list.command.stashAllIncludeUntracked%",
+        "icon": "$(archive)"
       }
     ],
     "menus": {
+      "scm/resourceGroup/context": [
+        {
+          "command": "gitList.stashAllIncludeUntracked",
+          "when": "scmProvider == git && scmResourceGroup == index",
+          "group": "inline@8"
+        },
+        {
+          "command": "gitList.stashAllIncludeUntracked",
+          "when": "scmProvider == git && scmResourceGroup == workingTree",
+          "group": "inline@8"
+        }
+      ],
       "editor/title": [
         {
           "command": "gitList.openWorkingTreeFromDiff",
@@ -320,6 +346,16 @@
           "command": "gitList.mergeBranchIntoHead",
           "when": "view == gitListView && (viewItem == gitListBranchUnmerged || viewItem == gitListRemoteBranchUnmerged)",
           "group": "1_git"
+        },
+        {
+          "command": "gitList.copyCommitShortHash",
+          "when": "view == gitListView && (viewItem == gitListCommit || viewItem == gitListStash)",
+          "group": "9_copy@1"
+        },
+        {
+          "command": "gitList.copyCommitFullHash",
+          "when": "view == gitListView && (viewItem == gitListCommit || viewItem == gitListStash)",
+          "group": "9_copy@2"
         },
         {
           "command": "gitList.deleteBranch",

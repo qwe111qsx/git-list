@@ -93,5 +93,10 @@
   "gitList.cursorLineGitHintHoverLongHash": "Full",
   "gitList.cursorLineGitHintHoverCommitMessage": "Commit message",
   "gitList.cursorLineGitHintPreviewDiff": "Preview this file’s diff in this commit",
-  "gitList.cursorLineOpenCommitDiffFailed": "Could not open the commit diff for this file."
+  "gitList.cursorLineOpenCommitDiffFailed": "Could not open the commit diff for this file.",
+  "gitList.stashAllUntrackedTitle": "Stash — include untracked",
+  "gitList.stashAllUntrackedPrompt": "Optional stash description (git stash push -u -m …). Leave empty to let Git choose the message.",
+  "gitList.stashAllUntrackedPlaceholder": "e.g. WIP before switching branch",
+  "gitList.stashAllUntrackedDone": "Stash created (tracked + untracked).",
+  "gitList.stashAllUntrackedFailed": "Could not stash (include untracked)"
 }

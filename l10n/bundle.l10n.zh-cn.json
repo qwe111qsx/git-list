@@ -93,5 +93,10 @@
   "gitList.cursorLineGitHintHoverLongHash": "长哈希",
   "gitList.cursorLineGitHintHoverCommitMessage": "提交说明",
   "gitList.cursorLineGitHintPreviewDiff": "预览该提交中此文件的差异",
-  "gitList.cursorLineOpenCommitDiffFailed": "无法打开该提交中此文件的差异视图。"
+  "gitList.cursorLineOpenCommitDiffFailed": "无法打开该提交中此文件的差异视图。",
+  "gitList.stashAllUntrackedTitle": "贮藏 — 含未跟踪文件",
+  "gitList.stashAllUntrackedPrompt": "可选：贮藏说明（将执行 git stash push -u -m …）。留空则由 Git 自动生成说明。",
+  "gitList.stashAllUntrackedPlaceholder": "例如：切换分支前的 WIP",
+  "gitList.stashAllUntrackedDone": "已贮藏（含已跟踪与未跟踪更改）。",
+  "gitList.stashAllUntrackedFailed": "无法贮藏（含未跟踪）"
 }
