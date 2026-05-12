@@ -2,7 +2,7 @@
   "name": "git-list",
   "displayName": "Git List",
   "description": "Sidebar: commits, file history, branches, remotes, stashes — browse files and open diffs; paging, refresh, fetch, stash and branch actions.",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "author": "liuyuanfan",
   "publisher": "liuyuanfan",
   "license": "MIT",
@@ -53,6 +53,7 @@
     "onCommand:gitList.deleteBranch",
     "onCommand:gitList.deleteBranchesOlderThanSixMonths",
     "onCommand:gitList.openBranchesMoreActions",
+    "onCommand:gitList.openCommitListMoreActions",
     "onCommand:gitList.mergeBranchIntoHead",
     "onCommand:gitList.checkoutBranch",
     "onCommand:gitList.showRepoGitStatus",
@@ -99,6 +100,25 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%git-list.config.showCursorLineGitHint%"
+        },
+        "git-list.cursorLineGitHintGapCh": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 48,
+          "markdownDescription": "%git-list.config.cursorLineGitHintGapCh%"
+        },
+        "git-list.cursorLineGitHintMinCodeWidthCh": {
+          "type": "number",
+          "default": 32,
+          "minimum": 0,
+          "maximum": 256,
+          "markdownDescription": "%git-list.config.cursorLineGitHintMinCodeWidthCh%"
+        },
+        "git-list.cursorLineGitHintColor": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%git-list.config.cursorLineGitHintColor%"
         },
         "git-list.cursorLineGitHintPreloadMaxLines": {
           "type": "number",
@@ -212,6 +232,11 @@
         "icon": "$(kebab-horizontal)"
       },
       {
+        "command": "gitList.openCommitListMoreActions",
+        "title": "%git-list.command.openCommitListMoreActions%",
+        "icon": "$(kebab-horizontal)"
+      },
+      {
         "command": "gitList.mergeBranchIntoHead",
         "title": "%git-list.command.mergeBranchIntoHead%"
       },
@@ -280,12 +305,22 @@
         {
           "command": "gitList.refreshCommits",
           "when": "view == gitListView && viewItem == gitListSectionCommits",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "gitList.openCommitListMoreActions",
+          "when": "view == gitListView && viewItem == gitListSectionCommits",
+          "group": "inline@2"
         },
         {
           "command": "gitList.refreshFileHistory",
           "when": "view == gitListView && viewItem == gitListSectionFileHistory",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "gitList.openCommitListMoreActions",
+          "when": "view == gitListView && viewItem == gitListSectionFileHistory",
+          "group": "inline@2"
         },
         {
           "command": "gitList.refreshStash",
@@ -305,7 +340,12 @@
         {
           "command": "gitList.refreshBranchCommits",
           "when": "view == gitListView && (viewItem == gitListBranch || viewItem == gitListBranchUnmerged || viewItem == gitListRemoteBranch || viewItem == gitListRemoteBranchUnmerged)",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "gitList.openCommitListMoreActions",
+          "when": "view == gitListView && (viewItem == gitListBranch || viewItem == gitListBranchUnmerged || viewItem == gitListRemoteBranch || viewItem == gitListRemoteBranchUnmerged)",
+          "group": "inline@2"
         },
         {
           "command": "gitList.refreshRemotes",

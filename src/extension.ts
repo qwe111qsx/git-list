@@ -402,6 +402,42 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  type CommitListMorePick = vscode.QuickPickItem & { _action?: string };
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.openCommitListMoreActions", async (item?: GitListTreeItem) => {
+      const target =
+        item instanceof GitListTreeItem
+          ? item
+          : treeView.selection[0] instanceof GitListTreeItem
+            ? treeView.selection[0]
+            : undefined;
+      if (!target) {
+        return;
+      }
+      const ctx = await provider.resolveCommitListFilterContext(target);
+      if (!ctx) {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.commitListMoreUnavailable"));
+        return;
+      }
+      const picks: CommitListMorePick[] = [
+        {
+          label: `$(filter) ${vscode.l10n.t("gitList.commitListFilterParticipantsTitle")}`,
+          description: vscode.l10n.t("gitList.commitListFilterParticipantsDesc"),
+          _action: "participants",
+        },
+      ];
+      const picked = await vscode.window.showQuickPick(picks, {
+        title: vscode.l10n.t("gitList.commitListMorePickTitle"),
+        placeHolder: vscode.l10n.t("gitList.commitListMorePickPlaceholder"),
+      });
+      if (!picked || (picked as CommitListMorePick)._action !== "participants") {
+        return;
+      }
+      await provider.runParticipantFilterQuickPick(ctx.scopeKey, ctx.fireRefresh);
+    })
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("gitList.refreshBranchCommits", (item?: GitListTreeItem) => {
       const target = item ?? treeView.selection[0];

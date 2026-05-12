@@ -98,5 +98,14 @@
   "gitList.stashAllUntrackedPrompt": "Optional stash description (git stash push -u -m …). Leave empty to let Git choose the message.",
   "gitList.stashAllUntrackedPlaceholder": "e.g. WIP before switching branch",
   "gitList.stashAllUntrackedDone": "Stash created (tracked + untracked).",
-  "gitList.stashAllUntrackedFailed": "Could not stash (include untracked)"
+  "gitList.stashAllUntrackedFailed": "Could not stash (include untracked)",
+  "gitList.commitListMorePickTitle": "Commit list",
+  "gitList.commitListMorePickPlaceholder": "Choose an action",
+  "gitList.commitListFilterParticipantsTitle": "Filter by author…",
+  "gitList.commitListFilterParticipantsDesc": "Only commits by checked authors appear; others stay out until you include them here. All checked = clear filter.",
+  "gitList.commitListMoreUnavailable": "Open a repo file for File History first, or select Commits / a branch row.",
+  "gitList.participantFilterExpandFirst": "Expand this list once so commits load, then open participant filter again.",
+  "gitList.participantFilterPickTitle": "Include authors — list shows only their commits",
+  "gitList.participantFilterPickPlaceholder": "Only authors already seen in this list appear. Unchecked = excluded. Check all to clear filter. After OK, reload from page one.",
+  "gitList.participantFilterPageEmpty": "(No commits by included authors in this batch — try Load more or change the filter.)"
 }

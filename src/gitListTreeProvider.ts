@@ -293,6 +293,12 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
   private readonly remoteBranchRowByRef = new Map<string, GitListTreeItem>();
   /** 按 stash 提交 tip 复用行节点，避免刷新后丢失展开态。 */
   private readonly stashRowByTip = new Map<string, GitListTreeItem>();
+  /**
+   * 参与者筛选：有条目时表示「仅显示这些作者的提交」（白名单）；无条目表示不限制作者。
+   * `authorsSeen` 只包含当前列表加载过程中 git 已遇到的作者，用于筛选框选项。
+   */
+  private readonly participantAllowAuthorsByScope = new Map<string, Set<string>>();
+  private readonly participantAuthorsSeenByScope = new Map<string, Set<string>>();
   /** 与 TreeView 同步：用户展开过的节点，重建时用 Expanded。 */
   private readonly expandedStashTipHashes = new Set<string>();
   private readonly expandedBranchNames = new Set<string>();
@@ -341,6 +347,111 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
     this.branchesListLimit = readBranchesPageSize();
     this.remotesListLimit = readRemotesPageSize();
     this.fileHistoryCommitLimit = readCommitsPageSize();
+  }
+
+  private normalizeParticipantName(name: string): string {
+    return name.trim();
+  }
+
+  private makeParticipantOpts(scopeKey: string): {
+    allowedAuthors?: ReadonlySet<string>;
+    onRecordAuthors: (names: string[]) => void;
+  } {
+    const allow = this.participantAllowAuthorsByScope.get(scopeKey);
+    return {
+      ...(allow !== undefined ? { allowedAuthors: allow } : {}),
+      onRecordAuthors: (names: string[]) => {
+        let seenSet = this.participantAuthorsSeenByScope.get(scopeKey);
+        if (!seenSet) {
+          seenSet = new Set<string>();
+          this.participantAuthorsSeenByScope.set(scopeKey, seenSet);
+        }
+        for (const n of names) {
+          seenSet.add(this.normalizeParticipantName(n));
+        }
+      },
+    };
+  }
+
+  /**
+   * 解析「提交类列表」分区行，用于参与者筛选入口（Commits / File History / 分支下提交）。
+   */
+  async resolveCommitListFilterContext(
+    element: GitListTreeItem
+  ): Promise<{ scopeKey: string; fireRefresh: GitListTreeItem } | undefined> {
+    if (element.kind === "sectionCommits") {
+      return { scopeKey: "root", fireRefresh: this.rootSectionCommits };
+    }
+    if (element.kind === "sectionFileHistory") {
+      const anchor = this.fileHistoryAnchorFsPath;
+      if (!anchor) {
+        return undefined;
+      }
+      const fileRepo = await getGitRoot(path.dirname(anchor));
+      if (!fileRepo) {
+        return undefined;
+      }
+      const rel = path.relative(fileRepo, anchor).split(path.sep).join("/");
+      if (!rel || rel.startsWith("..")) {
+        return undefined;
+      }
+      return {
+        scopeKey: `fileHistory:${encodeURIComponent(rel)}`,
+        fireRefresh: this.rootSectionFileHistory,
+      };
+    }
+    if (element.kind === "branch" && element.branchName) {
+      return { scopeKey: `branch:${element.branchName}`, fireRefresh: element };
+    }
+    return undefined;
+  }
+
+  /** 将某提交列表维度重置为「第一页」并清空已见作者集合（筛选确认后调用，选项列表与树同步从浅到深）。 */
+  private resetCommitListToFirstPageAfterFilter(scopeKey: string): void {
+    const page = readCommitsPageSize();
+    if (scopeKey === "root") {
+      this.commitLimit = page;
+    } else if (scopeKey.startsWith("fileHistory:")) {
+      this.fileHistoryCommitLimit = page;
+    } else if (scopeKey.startsWith("branch:")) {
+      const branchName = scopeKey.slice("branch:".length);
+      this.branchCommitLimits.delete(branchName);
+    }
+    this.participantAuthorsSeenByScope.delete(scopeKey);
+  }
+
+  /**
+   * 多选 QuickPick：列表中的作者全部勾选 = 取消筛选；否则仅展示已勾选作者的提交（白名单）。
+   * 仅列出 authorsSeen；未在名单里的作者不会出现；确定后从第一页重新加载。
+   */
+  async runParticipantFilterQuickPick(scopeKey: string, refreshItem: GitListTreeItem): Promise<void> {
+    const seen = this.participantAuthorsSeenByScope.get(scopeKey);
+    const all = [...(seen ?? new Set<string>())].sort((a, b) => a.localeCompare(b));
+    if (all.length === 0) {
+      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.participantFilterExpandFirst"));
+      return;
+    }
+    const curAllow = this.participantAllowAuthorsByScope.get(scopeKey);
+    const items: vscode.QuickPickItem[] = all.map((a) => ({
+      label: a,
+      picked: curAllow === undefined ? true : curAllow.has(a),
+    }));
+    const selected = await vscode.window.showQuickPick(items, {
+      canPickMany: true,
+      title: vscode.l10n.t("gitList.participantFilterPickTitle"),
+      placeHolder: vscode.l10n.t("gitList.participantFilterPickPlaceholder"),
+    });
+    if (selected === undefined) {
+      return;
+    }
+    const selectedSet = new Set(selected.map((s) => s.label));
+    if (selectedSet.size === all.length) {
+      this.participantAllowAuthorsByScope.delete(scopeKey);
+    } else {
+      this.participantAllowAuthorsByScope.set(scopeKey, new Set(selectedSet));
+    }
+    this.resetCommitListToFirstPageAfterFilter(scopeKey);
+    this._onDidChangeTreeData.fire(refreshItem);
   }
 
   /** 与侧栏 TreeView 联动，删除/刷新后仍按记忆恢复展开。 */
@@ -960,7 +1071,8 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
         element.branchName,
         element.branchName,
         this.expandedCommitFullHashes,
-        undefined
+        undefined,
+        this.makeParticipantOpts(`branch:${element.branchName}`)
       );
     }
     if (element.kind === "sectionCommits") {
@@ -975,7 +1087,8 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
         undefined,
         undefined,
         this.expandedCommitFullHashes,
-        undefined
+        undefined,
+        this.makeParticipantOpts("root")
       );
     }
     if (element.kind === "sectionFileHistory") {
@@ -991,6 +1104,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       if (!rel || rel.startsWith("..")) {
         return [emptyLeaf(vscode.l10n.t("gitList.fileHistoryNotInRepo"))];
       }
+      const scopeKey = `fileHistory:${encodeURIComponent(rel)}`;
       return loadCommits(
         this.extContext,
         fileRepo,
@@ -999,7 +1113,8 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
         undefined,
         undefined,
         this.expandedCommitFullHashes,
-        rel
+        rel,
+        this.makeParticipantOpts(scopeKey)
       );
     }
     if (element.kind === "sectionStash") {
@@ -2131,6 +2246,139 @@ function applyStashRowListFields(
   item.tooltip = `${stashRef} — ${label}`;
 }
 
+function normalizeParticipantName(name: string): string {
+  return name.trim();
+}
+
+type GitListLogScope =
+  | { kind: "file"; relPath: string }
+  | { kind: "rev"; revision: string }
+  | { kind: "head" };
+
+async function gitLogFetchChunk(
+  repo: string,
+  scope: GitListLogScope,
+  skip: number,
+  chunk: number
+): Promise<ParsedCommitRecord[]> {
+  const n = String(chunk);
+  const sk = String(skip);
+  const pretty = "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s";
+  const args: string[] =
+    scope.kind === "file"
+      ? ["log", "--all", "--follow", "--skip", sk, "-n", n, pretty, "--numstat", "--", scope.relPath]
+      : scope.kind === "rev"
+        ? ["log", scope.revision, "--skip", sk, "-n", n, pretty, "--numstat"]
+        : ["log", "--skip", sk, "-n", n, pretty, "--numstat"];
+  const { stdout } = await execFileAsync("git", args, {
+    cwd: repo,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return parseGitLogWithNumstat(stdout);
+}
+
+/**
+ * 有白名单筛选时：沿历史分段 log，直到凑满 displayLimit+1 条「在允许作者集中」的提交（与无筛选时一页条数一致），或仓库见底 / 触及 raw 安全上限。
+ */
+async function collectVisibleCommitsWithParticipantFilter(
+  repo: string,
+  displayLimit: number,
+  allowed: ReadonlySet<string>,
+  scope: GitListLogScope,
+  onRecordAuthors: (names: string[]) => void
+): Promise<{
+  slice: ParsedCommitRecord[];
+  hasMore: boolean;
+  rawHadAny: boolean;
+}> {
+  const needVisible = displayLimit + 1;
+  const visible: ParsedCommitRecord[] = [];
+  let skip = 0;
+  const chunk = 200;
+  /** 白名单匹配较稀时仍需凑满与 settings 一致的一页条数（如 40）；上限防止极端仓库卡死。 */
+  const safetyMaxRaw = Math.min(1_200_000, Math.max(8000, displayLimit * 15_000));
+  let totalRawScanned = 0;
+  /** `git log` 已无法再返回更多 raw 提交（空返回或末段不足 chunk）。 */
+  let historyExhausted = false;
+  while (visible.length < needVisible && totalRawScanned < safetyMaxRaw) {
+    const batch = await gitLogFetchChunk(repo, scope, skip, chunk);
+    if (batch.length === 0) {
+      historyExhausted = true;
+      break;
+    }
+    onRecordAuthors(batch.map((r) => normalizeParticipantName(r.author)));
+    totalRawScanned += batch.length;
+    skip += batch.length;
+    for (const rec of batch) {
+      if (allowed.has(normalizeParticipantName(rec.author))) {
+        visible.push(rec);
+        if (visible.length >= needVisible) {
+          break;
+        }
+      }
+    }
+    if (visible.length >= needVisible) {
+      break;
+    }
+    if (batch.length < chunk) {
+      historyExhausted = true;
+      break;
+    }
+  }
+  const hitRawCap =
+    !historyExhausted && totalRawScanned >= safetyMaxRaw && visible.length < needVisible;
+  const hasMore = visible.length > displayLimit || hitRawCap;
+  const slice = visible.slice(0, displayLimit);
+  const rawHadAny = totalRawScanned > 0;
+  return { slice, hasMore, rawHadAny };
+}
+
+function mapParsedCommitsToTreeItems(
+  context: vscode.ExtensionContext,
+  slice: ParsedCommitRecord[],
+  commitExpanded: Set<string> | undefined,
+  commitListIdPrefix: string
+): GitListTreeItem[] {
+  return slice.map((rec) => {
+    const meta: CommitListMeta = {
+      fullHash: rec.fullHash,
+      author: rec.author,
+      authorEmail: rec.authorEmail,
+      dateAuthorIso: rec.dateAuthorIso,
+      filesAdded: rec.filesAdded,
+      filesDeleted: rec.filesDeleted,
+      filesModified: rec.filesModified,
+      linesAdded: rec.linesAdded,
+      linesRemoved: rec.linesRemoved,
+      binaryFiles: rec.binaryFiles,
+    };
+    const icon = getAuthorAccountIconUri(context, rec.authorEmail, rec.author);
+    const commitColl =
+      commitExpanded?.has(rec.fullHash) === true
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.Collapsed;
+    return new GitListTreeItem(
+      "commit",
+      rec.subject || rec.hash,
+      commitColl,
+      rec.hash,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      meta,
+      icon,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      commitListIdPrefix,
+      undefined
+    );
+  });
+}
+
 /** @param logRevision 传入时等价于 `git log <rev>`；否则为当前 HEAD。 @param loadMoreForBranch 有值时「加载更多」走分支分页。 @param fileHistoryRelPath 有值时按路径列提交（`--all --follow`）。 */
 async function loadCommits(
   context: vscode.ExtensionContext,
@@ -2140,97 +2388,151 @@ async function loadCommits(
   logRevision?: string,
   loadMoreForBranch?: string,
   commitExpanded?: Set<string>,
-  fileHistoryRelPath?: string
+  fileHistoryRelPath?: string,
+  participantOpts?: {
+    allowedAuthors?: ReadonlySet<string>;
+    onRecordAuthors: (names: string[]) => void;
+  }
 ): Promise<GitListTreeItem[]> {
   try {
     let commitListIdPrefix: string;
+    let scope: GitListLogScope;
     if (fileHistoryRelPath !== undefined) {
       commitListIdPrefix = `fileHistory:${encodeURIComponent(fileHistoryRelPath)}`;
+      scope = { kind: "file", relPath: fileHistoryRelPath };
     } else if (loadMoreForBranch !== undefined) {
       commitListIdPrefix = `branch:${loadMoreForBranch}`;
+      scope = { kind: "rev", revision: loadMoreForBranch };
     } else {
       commitListIdPrefix = "root";
+      scope = logRevision ? { kind: "rev", revision: logRevision } : { kind: "head" };
     }
-    const fetchCount = String(displayLimit + 1);
-    let logArgs: string[];
-    if (fileHistoryRelPath !== undefined) {
-      logArgs = [
-        "log",
-        "--all",
-        "--follow",
-        "-n",
-        fetchCount,
-        "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
-        "--numstat",
-        "--",
-        fileHistoryRelPath,
-      ];
-    } else if (logRevision) {
-      logArgs = [
-        "log",
-        logRevision,
-        "-n",
-        fetchCount,
-        "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
-        "--numstat",
-      ];
+
+    const allow = participantOpts?.allowedAuthors;
+
+    if (allow !== undefined && allow.size === 0) {
+      const fetchCount = String(displayLimit + 1);
+      let logArgs: string[];
+      if (fileHistoryRelPath !== undefined) {
+        logArgs = [
+          "log",
+          "--all",
+          "--follow",
+          "-n",
+          fetchCount,
+          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+          "--numstat",
+          "--",
+          fileHistoryRelPath,
+        ];
+      } else if (logRevision) {
+        logArgs = [
+          "log",
+          logRevision,
+          "-n",
+          fetchCount,
+          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+          "--numstat",
+        ];
+      } else {
+        logArgs = [
+          "log",
+          "-n",
+          fetchCount,
+          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+          "--numstat",
+        ];
+      }
+      const { stdout } = await execFileAsync("git", logArgs, {
+        cwd: repo,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      const parsed = parseGitLogWithNumstat(stdout);
+      if (parsed.length === 0) {
+        return [emptyLeaf(vscode.l10n.t("gitList.emptyNoCommits"))];
+      }
+      participantOpts!.onRecordAuthors(parsed.map((r) => normalizeParticipantName(r.author)));
+      return [emptyLeaf(vscode.l10n.t("gitList.participantFilterPageEmpty"))];
+    }
+
+    const useParticipantScan = Boolean(allow && allow.size > 0 && participantOpts);
+
+    let slice: ParsedCommitRecord[];
+    let hasMore: boolean;
+    let rawHadCommits: boolean;
+
+    if (useParticipantScan) {
+      const r = await collectVisibleCommitsWithParticipantFilter(
+        repo,
+        displayLimit,
+        allow!,
+        scope,
+        participantOpts!.onRecordAuthors
+      );
+      slice = r.slice;
+      hasMore = r.hasMore;
+      rawHadCommits = r.rawHadAny;
     } else {
-      logArgs = [
-        "log",
-        "-n",
-        fetchCount,
-        "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
-        "--numstat",
-      ];
+      const fetchCount = String(displayLimit + 1);
+      let logArgs: string[];
+      if (fileHistoryRelPath !== undefined) {
+        logArgs = [
+          "log",
+          "--all",
+          "--follow",
+          "-n",
+          fetchCount,
+          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+          "--numstat",
+          "--",
+          fileHistoryRelPath,
+        ];
+      } else if (logRevision) {
+        logArgs = [
+          "log",
+          logRevision,
+          "-n",
+          fetchCount,
+          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+          "--numstat",
+        ];
+      } else {
+        logArgs = [
+          "log",
+          "-n",
+          fetchCount,
+          "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s",
+          "--numstat",
+        ];
+      }
+      const { stdout } = await execFileAsync("git", logArgs, {
+        cwd: repo,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      const parsed = parseGitLogWithNumstat(stdout);
+      if (parsed.length === 0) {
+        return [emptyLeaf(vscode.l10n.t("gitList.emptyNoCommits"))];
+      }
+      participantOpts?.onRecordAuthors(parsed.map((r) => normalizeParticipantName(r.author)));
+      hasMore = parsed.length > displayLimit;
+      const rawSlice = hasMore ? parsed.slice(0, displayLimit) : parsed;
+      rawHadCommits = rawSlice.length > 0;
+      slice = rawSlice;
     }
-    const { stdout } = await execFileAsync("git", logArgs, {
-      cwd: repo,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    const parsed = parseGitLogWithNumstat(stdout);
-    if (parsed.length === 0) {
+
+    if (slice.length === 0 && !rawHadCommits) {
       return [emptyLeaf(vscode.l10n.t("gitList.emptyNoCommits"))];
     }
-    const hasMore = parsed.length > displayLimit;
-    const slice = hasMore ? parsed.slice(0, displayLimit) : parsed;
-    const items = slice.map((rec) => {
-      const meta: CommitListMeta = {
-        fullHash: rec.fullHash,
-        author: rec.author,
-        authorEmail: rec.authorEmail,
-        dateAuthorIso: rec.dateAuthorIso,
-        filesAdded: rec.filesAdded,
-        filesDeleted: rec.filesDeleted,
-        filesModified: rec.filesModified,
-        linesAdded: rec.linesAdded,
-        linesRemoved: rec.linesRemoved,
-        binaryFiles: rec.binaryFiles,
-      };
-      const icon = getAuthorAccountIconUri(context, rec.authorEmail, rec.author);
-      const commitColl =
-        commitExpanded?.has(rec.fullHash) === true
-          ? vscode.TreeItemCollapsibleState.Expanded
-          : vscode.TreeItemCollapsibleState.Collapsed;
-      return new GitListTreeItem(
-        "commit",
-        rec.subject || rec.hash,
-        commitColl,
-        rec.hash,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        meta,
-        icon,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        commitListIdPrefix,
-        undefined
-      );
-    });
+
+    const items: GitListTreeItem[] =
+      slice.length > 0
+        ? mapParsedCommitsToTreeItems(context, slice, commitExpanded, commitListIdPrefix)
+        : [];
+
+    if (slice.length === 0 && rawHadCommits) {
+      items.length = 0;
+      items.push(emptyLeaf(vscode.l10n.t("gitList.participantFilterPageEmpty")));
+    }
     if (hasMore) {
       if (fileHistoryRelPath !== undefined) {
         items.push(
@@ -2287,6 +2589,7 @@ async function loadCommits(
       }
     }
     return items;
+
   } catch {
     return [emptyLeaf(vscode.l10n.t("gitList.gitLogReadFailed"))];
   }

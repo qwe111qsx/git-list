@@ -18,6 +18,7 @@
   "git-list.command.deleteBranch": "Delete Branch…",
   "git-list.command.deleteBranchesOlderThanSixMonths": "Delete local branches older than 6 months…",
   "git-list.command.openBranchesMoreActions": "More branch actions…",
+  "git-list.command.openCommitListMoreActions": "More commit list actions…",
   "git-list.command.checkoutBranch": "Switch to This Branch",
   "git-list.command.mergeBranchIntoHead": "Merge into Current Branch…",
   "git-list.command.showRepoGitStatus": "Git List: Show Repository Status",
@@ -33,5 +34,8 @@
   "git-list.config.branchesPageSize": "Number of local branches to show when Branches is first expanded and for each \"Load more\" click.",
   "git-list.config.remotesPageSize": "Number of remote names to show when Remotes is first expanded and for each \"Load more\" click there. Branches under each remote use Branches page size.",
   "git-list.config.showCursorLineGitHint": "After the active line, show a name-rev–based ref label, blame author, and time. Hover for short/full hash, full commit message, and a link to preview this file’s diff in that commit.",
+  "git-list.config.cursorLineGitHintGapCh": "Extra horizontal gap in **ch** units between the line text and the inline hint (after margin). 0–48.",
+  "git-list.config.cursorLineGitHintMinCodeWidthCh": "If the line’s visual width in **ch** is less than this value, add extra space between the line end and the hint (does not shift source text). **0** disables. 0–256.",
+  "git-list.config.cursorLineGitHintColor": "CSS color for the inline hint (e.g. `#888888`, `rgba(128,128,128,0.65)`). Leave empty for a lighter built-in theme color (`input.placeholderForeground`).",
   "git-list.config.cursorLineGitHintPreloadMaxLines": "Preload git blame for the first N lines of each file (one git blame call) so moving the caret within that range is faster. 0 disables preloading (only the current line is blamed on demand)."
 }

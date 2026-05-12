@@ -34,7 +34,7 @@ function cacheKey(uri: vscode.Uri): string {
 }
 
 function readEnabled(): boolean {
-  return vscode.workspace.getConfiguration("git-list").get<boolean>("showCursorLineGitHint", true);
+  return vscode.workspace.getConfiguration("git-list").get<boolean>("showCursorLineGitHint", true) !== false;
 }
 
 function readPreloadMaxLines(): number {
@@ -44,6 +44,53 @@ function readPreloadMaxLines(): number {
     return 0;
   }
   return Math.min(n, 20000);
+}
+
+/** 行尾提示与正文之间的间距（ch） */
+function readGapCh(): number {
+  const v = vscode.workspace.getConfiguration("git-list").get<number>("cursorLineGitHintGapCh", 3);
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n) || n < 0) {
+    return 3;
+  }
+  return Math.min(n, 48);
+}
+
+/**
+ * 正文「可视列宽」低于此值时，给行尾 after 提示增加左侧 margin（0 表示关闭）。
+ * 解决短行时提示过靠左的问题；勿用 before，before 会推动整行源码。
+ */
+function readMinCodeWidthCh(): number {
+  const v = vscode.workspace.getConfiguration("git-list").get<number>("cursorLineGitHintMinCodeWidthCh", 32);
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
+  return Math.min(n, 256);
+}
+
+/** 空字符串时使用较浅的默认主题色（相对 descriptionForeground） */
+function readHintAttachmentColor(): string | vscode.ThemeColor {
+  const s = vscode.workspace.getConfiguration("git-list").get<string>("cursorLineGitHintColor", "");
+  const t = (s ?? "").trim();
+  if (t.length > 0) {
+    return t;
+  }
+  return new vscode.ThemeColor("input.placeholderForeground");
+}
+
+function lineVisualColumnCount(lineText: string, tabSize: number): number {
+  const ts = Math.max(1, Math.floor(tabSize));
+  let n = 0;
+  for (let i = 0; i < lineText.length; i++) {
+    const ch = lineText.charAt(i);
+    if (ch === "\t") {
+      n += ts - (n % ts);
+    } else {
+      n += 1;
+    }
+  }
+  return n;
 }
 
 async function getGitRoot(cwd: string): Promise<string | undefined> {
@@ -320,8 +367,6 @@ export function registerCursorLineGitHint(context: vscode.ExtensionContext): voi
   const decType = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     after: {
-      margin: "0 0 0 1.5ch",
-      color: new vscode.ThemeColor("descriptionForeground"),
       fontStyle: "normal",
       fontWeight: "normal",
     },
@@ -357,9 +402,21 @@ export function registerCursorLineGitHint(context: vscode.ExtensionContext): voi
     const when = formatBlameTime(blame.authorTimeUnix);
     const contentText = `${branch} · ${author} · ${when}`;
     const range = doc.lineAt(line).range;
-    editor.setDecorations(decType, [
-      { range, hoverMessage: hover, renderOptions: { after: { contentText } } },
-    ]);
+    const lineText = doc.lineAt(line).text;
+    const tabSize = typeof editor.options.tabSize === "number" ? editor.options.tabSize : 4;
+    const visualCols = lineVisualColumnCount(lineText, tabSize);
+    const minW = readMinCodeWidthCh();
+    const padCh = minW > 0 ? Math.max(0, minW - visualCols) : 0;
+    const gapCh = readGapCh();
+    const color = readHintAttachmentColor();
+    const marginLeftCh = gapCh + padCh;
+    const afterOpt: vscode.ThemableDecorationAttachmentRenderOptions = {
+      contentText,
+      margin: `0 0 0 ${marginLeftCh}ch`,
+      color,
+    };
+    const renderOptions: vscode.DecorationInstanceRenderOptions = { after: afterOpt };
+    editor.setDecorations(decType, [{ range, hoverMessage: hover, renderOptions }]);
     decoratedEditor = editor;
   };
 
@@ -463,7 +520,10 @@ export function registerCursorLineGitHint(context: vscode.ExtensionContext): voi
 
   const configAffectsHint = (e: vscode.ConfigurationChangeEvent): boolean =>
     e.affectsConfiguration("git-list.showCursorLineGitHint") ||
-    e.affectsConfiguration("git-list.cursorLineGitHintPreloadMaxLines");
+    e.affectsConfiguration("git-list.cursorLineGitHintPreloadMaxLines") ||
+    e.affectsConfiguration("git-list.cursorLineGitHintGapCh") ||
+    e.affectsConfiguration("git-list.cursorLineGitHintMinCodeWidthCh") ||
+    e.affectsConfiguration("git-list.cursorLineGitHintColor");
 
   context.subscriptions.push(
     vscode.window.onDidChangeTextEditorSelection((e) => {

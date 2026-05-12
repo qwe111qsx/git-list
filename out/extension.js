@@ -367,6 +367,36 @@ function activate(context) {
             await runAbortRebase();
         }
     }));
+    context.subscriptions.push(vscode.commands.registerCommand("gitList.openCommitListMoreActions", async (item) => {
+        const target = item instanceof gitListTreeProvider_1.GitListTreeItem
+            ? item
+            : treeView.selection[0] instanceof gitListTreeProvider_1.GitListTreeItem
+                ? treeView.selection[0]
+                : undefined;
+        if (!target) {
+            return;
+        }
+        const ctx = await provider.resolveCommitListFilterContext(target);
+        if (!ctx) {
+            void vscode.window.showWarningMessage(vscode.l10n.t("gitList.commitListMoreUnavailable"));
+            return;
+        }
+        const picks = [
+            {
+                label: `$(filter) ${vscode.l10n.t("gitList.commitListFilterParticipantsTitle")}`,
+                description: vscode.l10n.t("gitList.commitListFilterParticipantsDesc"),
+                _action: "participants",
+            },
+        ];
+        const picked = await vscode.window.showQuickPick(picks, {
+            title: vscode.l10n.t("gitList.commitListMorePickTitle"),
+            placeHolder: vscode.l10n.t("gitList.commitListMorePickPlaceholder"),
+        });
+        if (!picked || picked._action !== "participants") {
+            return;
+        }
+        await provider.runParticipantFilterQuickPick(ctx.scopeKey, ctx.fireRefresh);
+    }));
     context.subscriptions.push(vscode.commands.registerCommand("gitList.refreshBranchCommits", (item) => {
         const target = item ?? treeView.selection[0];
         if (target) {

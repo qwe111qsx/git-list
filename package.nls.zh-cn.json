@@ -16,6 +16,7 @@
   "git-list.command.deleteBranch": "删除分支…",
   "git-list.command.deleteBranchesOlderThanSixMonths": "删除 tip 早于 6 个月的本地分支…",
   "git-list.command.openBranchesMoreActions": "更多分支操作…",
+  "git-list.command.openCommitListMoreActions": "更多提交列表操作…",
   "git-list.command.checkoutBranch": "切换到该分支",
   "git-list.command.mergeBranchIntoHead": "合并进当前分支…",
   "git-list.command.showRepoGitStatus": "Git List: 查看仓库状态",
@@ -30,5 +31,8 @@
   "git-list.config.branchesPageSize": "首次展开 Branches 与每次「加载更多」时列出的本地分支条数；各远程下的跟踪分支列表分页与此相同。",
   "git-list.config.remotesPageSize": "首次展开 Remotes 分区与在该分区每次「加载更多」时列出的远程名称条数（默认 10）。各远程下的跟踪分支列表使用上面的 Branches 分页配置。",
   "git-list.config.showCursorLineGitHint": "在当前行后显示由 git name-rev 解析的引用名、作者、时间。悬停可查看短/长哈希、完整提交说明，以及「预览该提交中此文件差异」链接。",
+  "git-list.config.cursorLineGitHintGapCh": "行正文与行尾提示之间的额外水平间距，单位为 **ch**，对应装饰的左侧外边距。范围 0–48。",
+  "git-list.config.cursorLineGitHintMinCodeWidthCh": "当该行按 Tab 折算后的「可视列宽」小于此值时，在行尾与提示之间多加一段空白（不移动源码）。**0** 关闭。范围 0–256。",
+  "git-list.config.cursorLineGitHintColor": "行尾提示文字颜色，填 CSS 颜色（如 `#888888`、`rgba(128,128,128,0.65)`）。留空则使用较浅的编辑器主题色（`input.placeholderForeground`）。",
   "git-list.config.cursorLineGitHintPreloadMaxLines": "对每个文件用一次 git blame 预加载前 N 行的信息，光标在该范围内移动时更快。0 表示不预加载，仅按需 blame 当前行。"
 }
