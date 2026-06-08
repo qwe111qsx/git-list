@@ -3,7 +3,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { clearAuthorStylesStore } from "./authorStyles";
 import { registerCursorLineGitHint } from "./cursorLineGitHint";
-import { GitListTreeItem, GitListTreeProvider, resolveWorkspaceGitRoot } from "./gitListTreeProvider";
+import { GitListTreeItem, GitListTreeProvider, invalidateWorkspaceGitRootCache, resolveWorkspaceGitRoot, syncWorkspaceGitRepoContext } from "./gitListTreeProvider";
 import {
   makeEmptyDocUri,
   makeGitObjectUri,
@@ -134,8 +134,59 @@ function stashRefShortForTitle(stashRef: string): string {
   return m ? `#${m[1]}` : stashRef;
 }
 
+async function readCurrentBranchName(repo: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync("git", ["branch", "--show-current"], {
+      cwd: repo,
+      maxBuffer: 4096,
+    });
+    const name = stdout.trim();
+    if (name) {
+      return name;
+    }
+    const { stdout: abbrOut } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: repo,
+      maxBuffer: 4096,
+    });
+    const abbr = abbrOut.trim();
+    if (abbr && abbr !== "HEAD") {
+      return abbr;
+    }
+    return vscode.l10n.t("gitList.headDetachedBranchLabel");
+  } catch {
+    return undefined;
+  }
+}
+
+async function readCurrentBranchHeadRef(repo: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: repo,
+      maxBuffer: 4096,
+    });
+    const head = stdout.trim();
+    return head || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function isCommitAncestorOfHead(repo: string, commit: string): Promise<boolean> {
+  try {
+    await execFileAsync("git", ["merge-base", "--is-ancestor", commit, "HEAD"], {
+      cwd: repo,
+      maxBuffer: 4096,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 注册侧栏树视图、命令，并在可用时订阅内置 Git 的仓库开关事件以刷新列表。 */
 export function activate(context: vscode.ExtensionContext): void {
+  void vscode.commands.executeCommand("setContext", "gitList.hasWorkspaceGitRepo", false);
+
   registerGitListDocumentProvider(context);
   registerCursorLineGitHint(context);
 
@@ -157,7 +208,36 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("gitList.refresh", () => provider.refresh())
+    vscode.commands.registerCommand("gitList.refresh", () => {
+      invalidateWorkspaceGitRootCache();
+      provider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.initRepository", async () => {
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      if (!folder) {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.openFolderHint"));
+        return;
+      }
+      const existing = await resolveWorkspaceGitRoot();
+      if (existing) {
+        await syncWorkspaceGitRepoContext();
+        provider.refresh();
+        return;
+      }
+      const cwd = folder.uri.fsPath;
+      try {
+        await initWorkspaceGitRepository(folder.uri);
+        invalidateWorkspaceGitRootCache();
+        void vscode.window.showInformationMessage(vscode.l10n.t("gitList.initRepoDone", cwd));
+        await syncWorkspaceGitRepoContext();
+        provider.refresh();
+      } catch (err) {
+        showGitErrorMessage("gitList.initRepoFailed", err);
+      }
+    })
   );
 
   context.subscriptions.push(
@@ -191,6 +271,8 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   provider.notifyFileHistoryContextChanged();
+  provider.refresh();
+  void syncWorkspaceGitRepoContext();
 
   context.subscriptions.push(
     vscode.commands.registerCommand("gitList.refreshCommits", () => provider.refreshCommitsList())
@@ -242,9 +324,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.refreshBranches", () => provider.refreshBranchesList())
   );
 
-  type BranchMoreAction = "gitStatus" | "abortMerge" | "abortRebase" | "deleteOld";
-  type BranchMorePick = vscode.QuickPickItem & { readonly _action: BranchMoreAction };
-
   async function runShowRepoGitStatus(): Promise<void> {
     const repo = await resolveWorkspaceGitRoot();
     if (!repo) {
@@ -282,6 +361,15 @@ export function activate(context: vscode.ExtensionContext): void {
     } catch {
       /* not rebasing */
     }
+    try {
+      await execFileAsync("git", ["rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD"], {
+        cwd: repo,
+        maxBuffer: 4096,
+      });
+      state += `\n${vscode.l10n.t("gitList.repoStateCherryPickInProgress")}\n`;
+    } catch {
+      /* not cherry-picking */
+    }
     if (state) {
       ch.appendLine(state.trimEnd());
     }
@@ -289,10 +377,26 @@ export function activate(context: vscode.ExtensionContext): void {
     void vscode.window.showInformationMessage(vscode.l10n.t("gitList.repoStatusOpened"));
   }
 
+  async function isCherryPickInProgress(repo: string): Promise<boolean> {
+    try {
+      await execFileAsync("git", ["rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD"], {
+        cwd: repo,
+        maxBuffer: 4096,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function runAbortMerge(): Promise<void> {
     const repo = await resolveWorkspaceGitRoot();
     if (!repo) {
       void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+      return;
+    }
+    if (await isCherryPickInProgress(repo)) {
+      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.useAbortCherryPickInstead"));
       return;
     }
     try {
@@ -355,30 +459,48 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   }
 
+  async function runAbortCherryPick(): Promise<void> {
+    const repo = await resolveWorkspaceGitRoot();
+    if (!repo) {
+      void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+      return;
+    }
+    if (!(await isCherryPickInProgress(repo))) {
+      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.noCherryPickInProgress"));
+      return;
+    }
+    const confirm = vscode.l10n.t("gitList.abortCherryPickConfirmButton");
+    const picked = await vscode.window.showWarningMessage(
+      vscode.l10n.t("gitList.abortCherryPickConfirmIntro"),
+      { modal: true },
+      confirm
+    );
+    if (picked !== confirm) {
+      return;
+    }
+    try {
+      await execFileAsync("git", ["cherry-pick", "--abort"], { cwd: repo, maxBuffer: 1024 * 1024 });
+      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.abortCherryPickDone"));
+      provider.refresh();
+    } catch (err) {
+      showGitErrorMessage("gitList.abortCherryPickFailed", err);
+    }
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand("gitList.showRepoGitStatus", () => runShowRepoGitStatus())
   );
   context.subscriptions.push(vscode.commands.registerCommand("gitList.abortMerge", () => runAbortMerge()));
   context.subscriptions.push(vscode.commands.registerCommand("gitList.abortRebase", () => runAbortRebase()));
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.abortCherryPick", () => runAbortCherryPick())
+  );
+
+  type BranchMorePick = vscode.QuickPickItem & { readonly _action: "deleteOld" };
 
   context.subscriptions.push(
     vscode.commands.registerCommand("gitList.openBranchesMoreActions", async () => {
       const items: BranchMorePick[] = [
-        {
-          label: `$(list-flat) ${vscode.l10n.t("gitList.branchesMoreGitStatusTitle")}`,
-          description: vscode.l10n.t("gitList.branchesMoreGitStatusDesc"),
-          _action: "gitStatus",
-        },
-        {
-          label: `$(debug-disconnect) ${vscode.l10n.t("gitList.branchesMoreAbortMergeTitle")}`,
-          description: vscode.l10n.t("gitList.branchesMoreAbortMergeDesc"),
-          _action: "abortMerge",
-        },
-        {
-          label: `$(debug-disconnect) ${vscode.l10n.t("gitList.branchesMoreAbortRebaseTitle")}`,
-          description: vscode.l10n.t("gitList.branchesMoreAbortRebaseDesc"),
-          _action: "abortRebase",
-        },
         {
           label: `$(trash) ${vscode.l10n.t("gitList.branchesMoreDeleteOldTitle")}`,
           description: vscode.l10n.t("gitList.branchesMoreDeleteOldDescription"),
@@ -389,15 +511,8 @@ export function activate(context: vscode.ExtensionContext): void {
         title: vscode.l10n.t("gitList.branchesMorePickTitle"),
         placeHolder: vscode.l10n.t("gitList.branchesMorePickPlaceholder"),
       });
-      const act = picked ? (picked as BranchMorePick)._action : undefined;
-      if (act === "deleteOld") {
+      if (picked?._action === "deleteOld") {
         await vscode.commands.executeCommand("gitList.deleteBranchesOlderThanSixMonths");
-      } else if (act === "gitStatus") {
-        await runShowRepoGitStatus();
-      } else if (act === "abortMerge") {
-        await runAbortMerge();
-      } else if (act === "abortRebase") {
-        await runAbortRebase();
       }
     })
   );
@@ -937,6 +1052,78 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.cherryPickCommit", async (item?: GitListTreeItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target || target.kind !== "commit" || !target.commitMeta?.fullHash) {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cherryPickPickCommit"));
+        return;
+      }
+      const repo = await resolveWorkspaceGitRoot();
+      if (!repo) {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        return;
+      }
+      const fullHash = target.commitMeta.fullHash.trim();
+      const headRef = await readCurrentBranchHeadRef(repo);
+      if (!headRef) {
+        void vscode.window.showErrorMessage(vscode.l10n.t("gitList.deleteBranchReadHeadFailed"));
+        return;
+      }
+      if (headRef === "HEAD") {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cherryPickDetachedHead"));
+        return;
+      }
+      const branchName = (await readCurrentBranchName(repo)) ?? headRef;
+      try {
+        const { stdout: headHashOut } = await execFileAsync("git", ["rev-parse", "HEAD"], {
+          cwd: repo,
+          maxBuffer: 4096,
+        });
+        if (headHashOut.trim() === fullHash) {
+          void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cherryPickAlreadyHead"));
+          return;
+        }
+      } catch {
+        void vscode.window.showErrorMessage(vscode.l10n.t("gitList.deleteBranchReadHeadFailed"));
+        return;
+      }
+      if (await isCommitAncestorOfHead(repo, fullHash)) {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cherryPickAlreadyOnBranch"));
+        return;
+      }
+      const subject = typeof target.label === "string" ? target.label : String(target.label);
+      const shortHash = fullHash.length > 7 ? fullHash.slice(0, 7) : fullHash;
+      const confirmBtn = vscode.l10n.t("gitList.cherryPickConfirmButton");
+      const picked = await vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "gitList.cherryPickConfirmIntro",
+          subject,
+          shortHash,
+          branchName,
+          fullHash
+        ),
+        { modal: true },
+        confirmBtn
+      );
+      if (picked !== confirmBtn) {
+        return;
+      }
+      try {
+        await execFileAsync("git", ["cherry-pick", fullHash], {
+          cwd: repo,
+          maxBuffer: 1024 * 1024,
+        });
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t("gitList.cherryPickDone", shortHash, branchName)
+        );
+        provider.refresh();
+      } catch (err) {
+        showGitErrorMessage("gitList.cherryPickFailed", err);
+      }
+    })
+  );
+
   function resolveCommitOrStashHashes(
     target: GitListTreeItem
   ): { short: string; long: string } | undefined {
@@ -982,6 +1169,25 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       await vscode.env.clipboard.writeText(h.long);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("gitList.copyHeadBranchName", async () => {
+      const repo = await resolveWorkspaceGitRoot();
+      if (!repo) {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        return;
+      }
+      const branchName = await readCurrentBranchName(repo);
+      if (!branchName) {
+        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.copyHeadReadFailed"));
+        return;
+      }
+      await vscode.env.clipboard.writeText(branchName);
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t("gitList.copyHeadBranchDone", branchName)
+      );
     })
   );
 
@@ -1122,6 +1328,16 @@ export function activate(context: vscode.ExtensionContext): void {
 
   void subscribeBuiltInGitEvents(context, () => provider.refresh());
 
+  registerWorkspaceDotGitWatcher(context, provider);
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      invalidateWorkspaceGitRootCache();
+      void syncWorkspaceGitRepoContext();
+      provider.refresh();
+    })
+  );
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("git-list")) {
@@ -1157,18 +1373,80 @@ function normalizeRepoRoot(fsPath: string): string {
   return process.platform === "win32" ? n.toLowerCase() : n;
 }
 
-function repoMatchesAnyWorkspaceFolder(api: BuiltInGitApi, repo: BuiltInGitRepository): boolean {
+/** 监听工作区 `.git` 创建/删除，手动删仓库后无需依赖刷新按钮。 */
+function registerWorkspaceDotGitWatcher(
+  context: vscode.ExtensionContext,
+  provider: GitListTreeProvider
+): void {
+  let watcher: vscode.FileSystemWatcher | undefined;
+
+  const resetWatcher = (): void => {
+    watcher?.dispose();
+    watcher = undefined;
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) {
+      return;
+    }
+    watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(folder, ".git")
+    );
+    const onGitPresenceChanged = (): void => {
+      invalidateWorkspaceGitRootCache();
+      void syncWorkspaceGitRepoContext();
+      provider.refresh();
+    };
+    watcher.onDidCreate(onGitPresenceChanged);
+    watcher.onDidDelete(onGitPresenceChanged);
+  };
+
+  resetWatcher();
+  context.subscriptions.push(
+    { dispose: () => watcher?.dispose() },
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      resetWatcher();
+    })
+  );
+}
+
+/** 内置 Git 扩展 API：init / openRepository（注册新仓库，避免 git.refresh 报「无可用存储库」）。 */
+interface BuiltInGitRepoApi {
+  init?(root: vscode.Uri, options?: { defaultBranch?: string }): Promise<unknown>;
+  openRepository?(root: vscode.Uri): Promise<unknown>;
+}
+
+async function initWorkspaceGitRepository(folderUri: vscode.Uri): Promise<void> {
+  const cwd = folderUri.fsPath;
+  const ext = vscode.extensions.getExtension("vscode.git");
+  if (ext) {
+    try {
+      await ext.activate();
+      const api = ext.exports?.getAPI?.(1) as BuiltInGitRepoApi | undefined;
+      if (api?.init) {
+        await api.init(folderUri);
+        return;
+      }
+      await execFileAsync("git", ["init"], { cwd, maxBuffer: 1024 * 1024 });
+      if (api?.openRepository) {
+        await api.openRepository(folderUri);
+        return;
+      }
+      return;
+    } catch {
+      /* fall through to plain git init */
+    }
+  }
+  await execFileAsync("git", ["init"], { cwd, maxBuffer: 1024 * 1024 });
+}
+
+function repoMatchesAnyWorkspaceFolder(_api: BuiltInGitApi, repo: BuiltInGitRepository): boolean {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders?.length) {
     return false;
   }
   const target = normalizeRepoRoot(repo.rootUri.fsPath);
   for (const wf of folders) {
-    const gr = api.getRepository(wf.uri);
-    if (!gr) {
-      continue;
-    }
-    if (normalizeRepoRoot(gr.rootUri.fsPath) === target) {
+    const wfNorm = normalizeRepoRoot(wf.uri.fsPath);
+    if (target === wfNorm || wfNorm.startsWith(`${target}/`) || target.startsWith(`${wfNorm}/`)) {
       return true;
     }
   }
@@ -1252,14 +1530,22 @@ async function subscribeBuiltInGitEvents(context: vscode.ExtensionContext, refre
 
     context.subscriptions.push(
       api.onDidOpenRepository((repo) => {
-        refresh();
+        if (repoMatchesAnyWorkspaceFolder(api, repo)) {
+          invalidateWorkspaceGitRootCache();
+          void syncWorkspaceGitRepoContext();
+          refresh();
+        }
         attachRepoStateListener(repo);
       })
     );
     context.subscriptions.push(
       api.onDidCloseRepository((repo) => {
         detachRepoStateListener(repo);
-        refresh();
+        if (repoMatchesAnyWorkspaceFolder(api, repo)) {
+          invalidateWorkspaceGitRootCache();
+          void syncWorkspaceGitRepoContext();
+          refresh();
+        }
       })
     );
 

@@ -34,7 +34,10 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GitListTreeProvider = exports.GitListTreeItem = void 0;
+exports.invalidateWorkspaceGitRootCache = invalidateWorkspaceGitRootCache;
+exports.syncWorkspaceGitRepoContext = syncWorkspaceGitRepoContext;
 exports.resolveWorkspaceGitRoot = resolveWorkspaceGitRoot;
+const fs = __importStar(require("fs"));
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
@@ -555,7 +558,7 @@ class GitListTreeProvider {
         this.remoteBranchesListLimits.clear();
         this.diffCache.clear();
         this.resetTrackedTreeExpansion();
-        this._onDidChangeTreeData.fire();
+        void this.refreshAfterRepoLabelsSynced();
     }
     /** 设置里修改了 git-list.* 时：重置已加载条数并刷新树。 */
     onGitListConfigurationChanged() {
@@ -568,6 +571,16 @@ class GitListTreeProvider {
         this.remoteBranchesListLimits.clear();
         this.diffCache.clear();
         this.resetTrackedTreeExpansion();
+        void this.refreshAfterRepoLabelsSynced();
+    }
+    /** 同步分区标题后再刷新树；避免在 getChildren 内改 label 触发 VS Code 反复拉取子节点。 */
+    async refreshAfterRepoLabelsSynced() {
+        invalidateWorkspaceGitRootCache();
+        const wr = getWorkspaceRoot();
+        const repo = wr ? await getWorkspaceGitRoot() : undefined;
+        await this.syncSectionCountLabels(repo);
+        await this.updateFileHistorySectionTitleFromAnchor();
+        await vscode.commands.executeCommand("setContext", "gitList.hasWorkspaceGitRepo", repo !== undefined);
         this._onDidChangeTreeData.fire();
     }
     loadMoreCommits() {
@@ -722,7 +735,7 @@ class GitListTreeProvider {
         this.branchesListLimit = readBranchesPageSize();
         void (async () => {
             const wr = getWorkspaceRoot();
-            const r = wr ? await getGitRoot(wr) : undefined;
+            const r = wr ? await getWorkspaceGitRoot() : undefined;
             await this.syncSectionCountLabels(r);
             this._onDidChangeTreeData.fire(this.rootSectionBranches);
         })();
@@ -733,7 +746,7 @@ class GitListTreeProvider {
         this.remotesListLimit = readRemotesPageSize();
         void (async () => {
             const wr = getWorkspaceRoot();
-            const r = wr ? await getGitRoot(wr) : undefined;
+            const r = wr ? await getWorkspaceGitRoot() : undefined;
             await this.syncSectionCountLabels(r);
             this._onDidChangeTreeData.fire(this.rootSectionRemotes);
         })();
@@ -747,7 +760,7 @@ class GitListTreeProvider {
         this.remoteBranchesListLimits.delete(rn);
         void (async () => {
             const wr = getWorkspaceRoot();
-            const r = wr ? await getGitRoot(wr) : undefined;
+            const r = wr ? await getWorkspaceGitRoot() : undefined;
             await this.syncSectionCountLabels(r);
             const row = this.remoteRowByName.get(rn);
             if (row) {
@@ -781,7 +794,7 @@ class GitListTreeProvider {
         this.branchRowByName.delete(branchName);
         void (async () => {
             const wr = getWorkspaceRoot();
-            const r = wr ? await getGitRoot(wr) : undefined;
+            const r = wr ? await getWorkspaceGitRoot() : undefined;
             await this.syncSectionCountLabels(r);
             this._onDidChangeTreeData.fire(this.rootSectionBranches);
         })();
@@ -797,7 +810,7 @@ class GitListTreeProvider {
         }
         void (async () => {
             const wr = getWorkspaceRoot();
-            const r = wr ? await getGitRoot(wr) : undefined;
+            const r = wr ? await getWorkspaceGitRoot() : undefined;
             await this.syncSectionCountLabels(r);
             this._onDidChangeTreeData.fire(this.rootSectionBranches);
         })();
@@ -805,9 +818,9 @@ class GitListTreeProvider {
     /** 更新 Branches / Stash 根节点标题中的数量（与仓库实际一致）。 */
     async syncSectionCountLabels(repo) {
         if (!repo) {
-            this.rootSectionBranches.label = "Branches (0)";
-            this.rootSectionStash.label = "Stash (0)";
-            this.rootSectionRemotes.label = "Remotes (0)";
+            this.setSectionLabelIfChanged(this.rootSectionBranches, "Branches (0)");
+            this.setSectionLabelIfChanged(this.rootSectionStash, "Stash (0)");
+            this.setSectionLabelIfChanged(this.rootSectionRemotes, "Remotes (0)");
             return;
         }
         const [b, s, rc] = await Promise.all([
@@ -815,9 +828,14 @@ class GitListTreeProvider {
             countStashesInRepo(repo),
             countRemotesInRepo(repo),
         ]);
-        this.rootSectionBranches.label = `Branches (${b})`;
-        this.rootSectionStash.label = `Stash (${s})`;
-        this.rootSectionRemotes.label = `Remotes (${rc})`;
+        this.setSectionLabelIfChanged(this.rootSectionBranches, `Branches (${b})`);
+        this.setSectionLabelIfChanged(this.rootSectionStash, `Stash (${s})`);
+        this.setSectionLabelIfChanged(this.rootSectionRemotes, `Remotes (${rc})`);
+    }
+    setSectionLabelIfChanged(item, label) {
+        if (item.label !== label) {
+            item.label = label;
+        }
     }
     /** 重置提交列表分页并清除提交 diff 缓存，仅刷新 Commits 分区。 */
     refreshCommitsList() {
@@ -840,7 +858,7 @@ class GitListTreeProvider {
         }
         void (async () => {
             const wr = getWorkspaceRoot();
-            const r = wr ? await getGitRoot(wr) : undefined;
+            const r = wr ? await getWorkspaceGitRoot() : undefined;
             await this.syncSectionCountLabels(r);
             this._onDidChangeTreeData.fire(this.rootSectionStash);
         })();
@@ -854,7 +872,7 @@ class GitListTreeProvider {
         }
         void (async () => {
             const wr = getWorkspaceRoot();
-            const r = wr ? await getGitRoot(wr) : undefined;
+            const r = wr ? await getWorkspaceGitRoot() : undefined;
             await this.syncSectionCountLabels(r);
             this._onDidChangeTreeData.fire(this.rootSectionStash);
         })();
@@ -876,16 +894,12 @@ class GitListTreeProvider {
             }
             catch {
                 this.stashRowByTip.clear();
-                return [
-                    new GitListTreeItem("info", "(No stashes)", vscode.TreeItemCollapsibleState.None),
-                ];
+                return [emptyLeaf(vscode.l10n.t("gitList.emptyNoStashes"))];
             }
             const lines = stdout.split(/\r?\n/).filter((l) => l.length > 0);
             if (lines.length === 0) {
                 this.stashRowByTip.clear();
-                return [
-                    new GitListTreeItem("info", "(No stashes)", vscode.TreeItemCollapsibleState.None),
-                ];
+                return [emptyLeaf(vscode.l10n.t("gitList.emptyNoStashes"))];
             }
             const hasMore = lines.length > displayLimit;
             const slice = hasMore ? lines.slice(0, displayLimit) : lines;
@@ -938,19 +952,14 @@ class GitListTreeProvider {
     }
     async getChildren(element) {
         const root = getWorkspaceRoot();
-        if (!root) {
-            await this.syncSectionCountLabels(undefined);
-            return [
-                this.rootSectionCommits,
-                this.rootSectionFileHistory,
-                this.rootSectionBranches,
-                this.rootSectionRemotes,
-                this.rootSectionStash,
-            ];
-        }
-        const repo = await getGitRoot(root);
         if (!element) {
-            await this.syncSectionCountLabels(repo);
+            invalidateWorkspaceGitRootCache();
+        }
+        const repo = root ? await getWorkspaceGitRoot() : undefined;
+        if (!element) {
+            if (!root || !repo) {
+                return [];
+            }
             return [
                 this.rootSectionCommits,
                 this.rootSectionFileHistory,
@@ -961,32 +970,32 @@ class GitListTreeProvider {
         }
         if (element.kind === "sectionBranches") {
             if (!repo) {
-                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+                return [noRepoTreeHintLeaf()];
             }
             return this.loadBranchRows(repo);
         }
         if (element.kind === "sectionRemotes") {
             if (!repo) {
-                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+                return [noRepoTreeHintLeaf()];
             }
             return this.loadRemoteRows(repo);
         }
         if (element.kind === "remote" && element.remoteName) {
             if (!repo) {
-                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+                return [noRepoTreeHintLeaf()];
             }
             return this.loadRemoteBranchRows(repo, element.remoteName);
         }
         if (element.kind === "branch" && element.branchName) {
             if (!repo) {
-                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+                return [noRepoTreeHintLeaf()];
             }
             const limit = this.getBranchCommitLimit(element.branchName);
             return loadCommits(this.extContext, repo, limit, readCommitsPageSize(), element.branchName, element.branchName, this.expandedCommitFullHashes, undefined, this.makeParticipantOpts(`branch:${element.branchName}`));
         }
         if (element.kind === "sectionCommits") {
             if (!repo) {
-                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+                return [noRepoTreeHintLeaf()];
             }
             return loadCommits(this.extContext, repo, this.commitLimit, readCommitsPageSize(), undefined, undefined, this.expandedCommitFullHashes, undefined, this.makeParticipantOpts("root"));
         }
@@ -997,7 +1006,7 @@ class GitListTreeProvider {
             }
             const fileRepo = await getGitRoot(path.dirname(anchor));
             if (!fileRepo) {
-                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+                return [noRepoTreeHintLeaf()];
             }
             const rel = path.relative(fileRepo, anchor).split(path.sep).join("/");
             if (!rel || rel.startsWith("..")) {
@@ -1008,19 +1017,19 @@ class GitListTreeProvider {
         }
         if (element.kind === "sectionStash") {
             if (!repo) {
-                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+                return [noRepoTreeHintLeaf()];
             }
             return this.loadStashList(repo, this.stashLimit, readStashPageSize());
         }
         if (element.kind === "commit" && element.hash) {
             if (!repo) {
-                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+                return [noRepoTreeHintLeaf()];
             }
             return this.getCommitPatchFiles(repo, element.hash);
         }
         if (element.kind === "stash" && element.stashRef) {
             if (!repo) {
-                return [emptyLeaf(vscode.l10n.t("gitList.noRepoTreeHint"))];
+                return [noRepoTreeHintLeaf()];
             }
             return this.getStashPatchFiles(repo, element.stashRef);
         }
@@ -1255,6 +1264,15 @@ function decorateBranchListRow(item, row, expandedBranchNames, unmergedIntoHead)
 function emptyLeaf(message) {
     return new GitListTreeItem("info", message, vscode.TreeItemCollapsibleState.None);
 }
+/** 无仓库提示叶节点：固定 id，避免 getChildren 每次返回新实例触发树反复刷新。 */
+let cachedNoRepoTreeHintLeaf;
+function noRepoTreeHintLeaf() {
+    if (!cachedNoRepoTreeHintLeaf) {
+        cachedNoRepoTreeHintLeaf = new GitListTreeItem("info", vscode.l10n.t("gitList.noRepoTreeHint"), vscode.TreeItemCollapsibleState.None);
+        cachedNoRepoTreeHintLeaf.id = "gitList-hint-no-repo";
+    }
+    return cachedNoRepoTreeHintLeaf;
+}
 function formatCommitListDate(authorDate) {
     const m = authorDate.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/);
     if (m) {
@@ -1265,15 +1283,15 @@ function formatCommitListDate(authorDate) {
 function buildCommitTooltip(subject, shortHash, meta) {
     const md = new vscode.MarkdownString();
     const totalFiles = meta.filesAdded + meta.filesDeleted + meta.filesModified;
-    md.appendMarkdown(`**说明** ${subject}\n\n`);
-    md.appendMarkdown(`**变更文件** 共 ${totalFiles} 个（修改 ${meta.filesModified} · 新增 ${meta.filesAdded} · 删除 ${meta.filesDeleted}）\n\n`);
+    md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipSubject")}** ${subject}\n\n`);
+    md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipChangedFiles")}** ${vscode.l10n.t("gitList.commitTooltipChangedFilesDetail", totalFiles, meta.filesModified, meta.filesAdded, meta.filesDeleted)}\n\n`);
     if (meta.binaryFiles > 0) {
-        md.appendMarkdown(`**二进制** ${meta.binaryFiles} 个\n\n`);
+        md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipBinary")}** ${vscode.l10n.t("gitList.commitTooltipBinaryCount", meta.binaryFiles)}\n\n`);
     }
-    md.appendMarkdown(`**行数** +${meta.linesAdded} / −${meta.linesRemoved}\n\n`);
-    md.appendMarkdown(`**作者** ${meta.author} <${meta.authorEmail}>\n\n`);
-    md.appendMarkdown(`**作者时间** ${meta.dateAuthorIso}\n\n`);
-    md.appendMarkdown(`**短哈希** \`${shortHash}\`　**完整哈希** \`${meta.fullHash}\``);
+    md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipLines")}** ${vscode.l10n.t("gitList.commitTooltipLinesDetail", meta.linesAdded, meta.linesRemoved)}\n\n`);
+    md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipAuthor")}** ${meta.author} <${meta.authorEmail}>\n\n`);
+    md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipAuthorTime")}** ${meta.dateAuthorIso}\n\n`);
+    md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipShortHash")}** \`${shortHash}\`　**${vscode.l10n.t("gitList.commitTooltipFullHash")}** \`${meta.fullHash}\``);
     return md;
 }
 /** 判断是否为 git log --pretty 产生的提交头行（与 numstat 数据行区分）。 */
@@ -1380,13 +1398,39 @@ function parseGitLogWithNumstat(stdout) {
 function getWorkspaceRoot() {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
-/** 当前工作区首文件夹对应的 Git 仓库根（与侧栏列表一致）。 */
-async function resolveWorkspaceGitRoot() {
+let gitRootCacheWorkspace;
+/** `undefined` = 未缓存；`null` = 当前工作区文件夹无 Git 仓库。 */
+let gitRootCacheValue;
+/** 工作区切换或 Git 仓库开闭时调用，避免沿用旧路径缓存。 */
+function invalidateWorkspaceGitRootCache() {
+    gitRootCacheWorkspace = undefined;
+    gitRootCacheValue = undefined;
+}
+/** 供菜单 `when` 与标题栏按钮：当前工作区首文件夹是否为 Git 仓库。 */
+async function syncWorkspaceGitRepoContext() {
+    invalidateWorkspaceGitRootCache();
+    const wr = getWorkspaceRoot();
+    const has = wr ? (await getWorkspaceGitRoot()) !== undefined : false;
+    await vscode.commands.executeCommand("setContext", "gitList.hasWorkspaceGitRepo", has);
+}
+async function getWorkspaceGitRoot() {
     const wr = getWorkspaceRoot();
     if (!wr) {
+        invalidateWorkspaceGitRootCache();
         return undefined;
     }
-    return getGitRoot(wr);
+    const wrNorm = path.normalize(wr);
+    if (gitRootCacheWorkspace === wrNorm && gitRootCacheValue !== undefined) {
+        return gitRootCacheValue ?? undefined;
+    }
+    gitRootCacheWorkspace = wrNorm;
+    const root = await getGitRoot(wr);
+    gitRootCacheValue = root ?? null;
+    return root;
+}
+/** 当前工作区首文件夹对应的 Git 仓库根（与侧栏列表一致）。 */
+async function resolveWorkspaceGitRoot() {
+    return getWorkspaceGitRoot();
 }
 async function getGitRoot(cwd) {
     try {
@@ -1394,11 +1438,36 @@ async function getGitRoot(cwd) {
             cwd,
             maxBuffer: 1024 * 1024,
         });
-        const p = stdout.trim();
-        return p || undefined;
+        const toplevel = path.normalize(stdout.trim());
+        if (!toplevel) {
+            return undefined;
+        }
+        const cwdNorm = path.normalize(cwd);
+        if (pathsEqual(toplevel, cwdNorm)) {
+            return toplevel;
+        }
+        // rev-parse 可能命中上级目录的仓库；仅当当前文件夹内仍有 .git 时才认作本工作区仓库
+        if (workspaceFolderHasDotGit(cwdNorm)) {
+            return toplevel;
+        }
+        return undefined;
     }
     catch {
         return undefined;
+    }
+}
+function pathsEqual(a, b) {
+    const na = path.normalize(a);
+    const nb = path.normalize(b);
+    return process.platform === "win32" ? na.toLowerCase() === nb.toLowerCase() : na === nb;
+}
+function workspaceFolderHasDotGit(workspacePath) {
+    try {
+        fs.statSync(path.join(workspacePath, ".git"));
+        return true;
+    }
+    catch {
+        return false;
     }
 }
 /** 从 unified diff 中解析 diff --git 得到文件路径与增/删/改。 */
@@ -1613,7 +1682,7 @@ function buildPatchTreeItems(repo, hash, stashRef, entries) {
     const normPaths = list.map((e) => e.path.replace(/\\/g, "/"));
     const appendTruncation = (items) => {
         if (truncated) {
-            items.push(new GitListTreeItem("info", "(File list truncated…)", vscode.TreeItemCollapsibleState.None));
+            items.push(new GitListTreeItem("info", vscode.l10n.t("gitList.fileListTruncated"), vscode.TreeItemCollapsibleState.None));
         }
         return items;
     };

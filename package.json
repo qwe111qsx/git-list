@@ -2,7 +2,7 @@
   "name": "git-list",
   "displayName": "Git List",
   "description": "Sidebar: commits, file history, branches, remotes, stashes — browse files and open diffs; paging, refresh, fetch, stash and branch actions.",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "author": "liuyuanfan",
   "publisher": "liuyuanfan",
   "license": "MIT",
@@ -40,6 +40,7 @@
     "onCommand:gitList.refreshCommits",
     "onCommand:gitList.refreshStash",
     "onCommand:gitList.createBranchFromCommit",
+    "onCommand:gitList.cherryPickCommit",
     "onCommand:gitList.refreshBranches",
     "onCommand:gitList.refreshBranchCommits",
     "onCommand:gitList.refreshRemotes",
@@ -59,8 +60,11 @@
     "onCommand:gitList.showRepoGitStatus",
     "onCommand:gitList.abortMerge",
     "onCommand:gitList.abortRebase",
+    "onCommand:gitList.abortCherryPick",
     "onCommand:gitList.openCursorLineCommitFileDiff",
-    "onCommand:gitList.stashAllIncludeUntracked"
+    "onCommand:gitList.stashAllIncludeUntracked",
+    "onCommand:gitList.initRepository",
+    "onCommand:gitList.copyHeadBranchName"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -147,6 +151,29 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "gitListView",
+        "contents": "%git-list.viewsWelcome.noRepo%",
+        "when": "workspaceFolderCount > 0 && gitList.hasWorkspaceGitRepo != true"
+      },
+      {
+        "view": "gitListView",
+        "contents": "%git-list.viewsWelcome.noFolder%",
+        "when": "workspaceFolderCount == 0"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "gitList.viewTitleMore",
+        "label": "%git-list.submenu.viewMore%",
+        "icon": "$(kebab-horizontal)"
+      },
+      {
+        "id": "gitList.viewTitleCopy",
+        "label": "%git-list.submenu.copy%"
+      }
+    ],
     "commands": [
       {
         "command": "gitList.refresh",
@@ -211,6 +238,10 @@
         "title": "%git-list.command.createBranchFromCommit%"
       },
       {
+        "command": "gitList.cherryPickCommit",
+        "title": "%git-list.command.cherryPickCommit%"
+      },
+      {
         "command": "gitList.applyStash",
         "title": "%git-list.command.applyStash%"
       },
@@ -246,15 +277,23 @@
       },
       {
         "command": "gitList.showRepoGitStatus",
-        "title": "%git-list.command.showRepoGitStatus%"
+        "title": "%git-list.command.showRepoGitStatus%",
+        "icon": "$(list-flat)"
       },
       {
         "command": "gitList.abortMerge",
-        "title": "%git-list.command.abortMerge%"
+        "title": "%git-list.command.abortMerge%",
+        "icon": "$(debug-disconnect)"
       },
       {
         "command": "gitList.abortRebase",
-        "title": "%git-list.command.abortRebase%"
+        "title": "%git-list.command.abortRebase%",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "gitList.abortCherryPick",
+        "title": "%git-list.command.abortCherryPick%",
+        "icon": "$(debug-disconnect)"
       },
       {
         "command": "gitList.openCursorLineCommitFileDiff",
@@ -272,6 +311,15 @@
         "command": "gitList.stashAllIncludeUntracked",
         "title": "%git-list.command.stashAllIncludeUntracked%",
         "icon": "$(archive)"
+      },
+      {
+        "command": "gitList.initRepository",
+        "title": "%git-list.command.initRepository%",
+        "icon": "$(repo-create)"
+      },
+      {
+        "command": "gitList.copyHeadBranchName",
+        "title": "%git-list.command.copyHeadBranchName%"
       }
     ],
     "menus": {
@@ -297,8 +345,41 @@
       "view/title": [
         {
           "command": "gitList.refresh",
-          "when": "view == gitListView",
+          "when": "view == gitListView && gitList.hasWorkspaceGitRepo",
           "group": "navigation"
+        },
+        {
+          "submenu": "gitList.viewTitleMore",
+          "when": "view == gitListView && gitList.hasWorkspaceGitRepo",
+          "group": "navigation@1"
+        }
+      ],
+      "gitList.viewTitleMore": [
+        {
+          "submenu": "gitList.viewTitleCopy",
+          "group": "1_copy@1"
+        },
+        {
+          "command": "gitList.showRepoGitStatus",
+          "group": "2_repo@1"
+        },
+        {
+          "command": "gitList.abortMerge",
+          "group": "2_repo@2"
+        },
+        {
+          "command": "gitList.abortRebase",
+          "group": "2_repo@3"
+        },
+        {
+          "command": "gitList.abortCherryPick",
+          "group": "2_repo@4"
+        }
+      ],
+      "gitList.viewTitleCopy": [
+        {
+          "command": "gitList.copyHeadBranchName",
+          "group": "1@1"
         }
       ],
       "view/item/context": [
@@ -363,9 +444,14 @@
           "group": "inline"
         },
         {
+          "command": "gitList.cherryPickCommit",
+          "when": "view == gitListView && viewItem == gitListCommit",
+          "group": "1_git@1"
+        },
+        {
           "command": "gitList.createBranchFromCommit",
           "when": "view == gitListView && viewItem == gitListCommit",
-          "group": "1_git"
+          "group": "1_git@2"
         },
         {
           "command": "gitList.applyStash",
