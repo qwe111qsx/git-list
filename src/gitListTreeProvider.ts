@@ -682,9 +682,11 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
 
   /** 与 Commits 分区刷新类似：重置 File History 分页并刷新。 */
   refreshFileHistoryList(): void {
-    this.fileHistoryCommitLimit = readCommitsPageSize();
-    void this.updateFileHistorySectionTitleFromAnchor().then(() => {
-      this._onDidChangeTreeData.fire(this.rootSectionFileHistory);
+    void this.tryUpdateFileHistoryAnchorFromActiveEditor().then(() => {
+      this.fileHistoryCommitLimit = readCommitsPageSize();
+      void this.updateFileHistorySectionTitleFromAnchor().then(() => {
+        this._onDidChangeTreeData.fire(this.rootSectionFileHistory);
+      });
     });
   }
 
@@ -1101,6 +1103,10 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       );
     }
     if (element.kind === "sectionFileHistory") {
+      if (!this.fileHistoryAnchorFsPath) {
+        await this.tryUpdateFileHistoryAnchorFromActiveEditor();
+        await this.updateFileHistorySectionTitleFromAnchor();
+      }
       const anchor = this.fileHistoryAnchorFsPath;
       if (!anchor) {
         return [emptyLeaf(vscode.l10n.t("gitList.fileHistoryOpenFileHint"))];
@@ -1742,6 +1748,21 @@ async function getGitRoot(cwd: string): Promise<string | undefined> {
     if (pathsEqual(toplevel, cwdNorm)) {
       return toplevel;
     }
+    // 文件常在 src/ 等子目录；rev-parse 得到的 toplevel 是仓库根，需认作有效
+    if (isPathInside(toplevel, cwdNorm)) {
+      const wr = getWorkspaceRoot();
+      if (wr) {
+        const wrNorm = path.normalize(wr);
+        if (
+          workspaceFolderHasDotGit(wrNorm) &&
+          (pathsEqual(wrNorm, toplevel) ||
+            isPathInside(wrNorm, toplevel) ||
+            isPathInside(toplevel, wrNorm))
+        ) {
+          return toplevel;
+        }
+      }
+    }
     // rev-parse 可能命中上级目录的仓库；仅当当前文件夹内仍有 .git 时才认作本工作区仓库
     if (workspaceFolderHasDotGit(cwdNorm)) {
       return toplevel;
@@ -1750,6 +1771,14 @@ async function getGitRoot(cwd: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+function isPathInside(parent: string, child: string): boolean {
+  if (pathsEqual(parent, child)) {
+    return true;
+  }
+  const rel = path.relative(parent, child);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
 function pathsEqual(a: string, b: string): boolean {
