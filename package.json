@@ -2,7 +2,7 @@
   "name": "git-list",
   "displayName": "Git List",
   "description": "Sidebar: commits, file history, branches, remotes, stashes — browse files and open diffs; paging, refresh, fetch, stash and branch actions.",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "author": "liuyuanfan",
   "publisher": "liuyuanfan",
   "license": "MIT",
