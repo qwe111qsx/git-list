@@ -188,45 +188,45 @@ export class GitListTreeItem extends vscode.TreeItem {
       this.iconPath = undefined;
       this.command = {
         command: "gitList.loadMoreCommits",
-        title: vscode.l10n.t("gitList.loadMoreCommand"),
+        title: vscode.l10n.t("Load more"),
       };
     } else if (kind === "loadMoreBranchCommits") {
       this.iconPath = undefined;
       this.command = {
         command: "gitList.loadMoreBranchCommits",
-        title: vscode.l10n.t("gitList.loadMoreCommand"),
+        title: vscode.l10n.t("Load more"),
         arguments: [this],
       };
     } else if (kind === "loadMoreStash") {
       this.iconPath = undefined;
       this.command = {
         command: "gitList.loadMoreStashes",
-        title: vscode.l10n.t("gitList.loadMoreCommand"),
+        title: vscode.l10n.t("Load more"),
       };
     } else if (kind === "loadMoreBranches") {
       this.iconPath = undefined;
       this.command = {
         command: "gitList.loadMoreBranches",
-        title: vscode.l10n.t("gitList.loadMoreCommand"),
+        title: vscode.l10n.t("Load more"),
       };
     } else if (kind === "loadMoreRemotes") {
       this.iconPath = undefined;
       this.command = {
         command: "gitList.loadMoreRemotes",
-        title: vscode.l10n.t("gitList.loadMoreCommand"),
+        title: vscode.l10n.t("Load more"),
       };
     } else if (kind === "loadMoreRemoteBranches") {
       this.iconPath = undefined;
       this.command = {
         command: "gitList.loadMoreRemoteBranches",
-        title: vscode.l10n.t("gitList.loadMoreCommand"),
+        title: vscode.l10n.t("Load more"),
         arguments: [this],
       };
     } else if (kind === "loadMoreFileHistoryCommits") {
       this.iconPath = undefined;
       this.command = {
         command: "gitList.loadMoreFileHistoryCommits",
-        title: vscode.l10n.t("gitList.loadMoreCommand"),
+        title: vscode.l10n.t("Load more"),
         arguments: [this],
       };
     } else if (kind === "patchFolder") {
@@ -255,7 +255,7 @@ export class GitListTreeItem extends vscode.TreeItem {
       }
       this.command = {
         command: "gitList.openPatchFileDiff",
-        title: vscode.l10n.t("gitList.openPatchFileDiffTitle"),
+        title: vscode.l10n.t("Open diff"),
         arguments: [this],
       };
     } else {
@@ -429,7 +429,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
     const seen = this.participantAuthorsSeenByScope.get(scopeKey);
     const all = [...(seen ?? new Set<string>())].sort((a, b) => a.localeCompare(b));
     if (all.length === 0) {
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.participantFilterExpandFirst"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("Expand this list once so commits load, then open participant filter again."));
       return;
     }
     const curAllow = this.participantAllowAuthorsByScope.get(scopeKey);
@@ -439,8 +439,8 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
     }));
     const selected = await vscode.window.showQuickPick(items, {
       canPickMany: true,
-      title: vscode.l10n.t("gitList.participantFilterPickTitle"),
-      placeHolder: vscode.l10n.t("gitList.participantFilterPickPlaceholder"),
+      title: vscode.l10n.t("Include authors — list shows only their commits"),
+      placeHolder: vscode.l10n.t("Only authors already seen in this list appear. Unchecked = excluded. Check all to clear filter. After OK, reload from page one."),
     });
     if (selected === undefined) {
       return;
@@ -952,12 +952,12 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
         stdout = out.stdout;
       } catch {
         this.stashRowByTip.clear();
-        return [emptyLeaf(vscode.l10n.t("gitList.emptyNoStashes"))];
+        return [emptyLeaf(vscode.l10n.t("(No stashes)"))];
       }
       const lines = stdout.split(/\r?\n/).filter((l) => l.length > 0);
       if (lines.length === 0) {
         this.stashRowByTip.clear();
-        return [emptyLeaf(vscode.l10n.t("gitList.emptyNoStashes"))];
+        return [emptyLeaf(vscode.l10n.t("(No stashes)"))];
       }
       const hasMore = lines.length > displayLimit;
       const slice = hasMore ? lines.slice(0, displayLimit) : lines;
@@ -1016,14 +1016,14 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
         items.push(
           new GitListTreeItem(
             "loadMoreStash",
-            vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
+            vscode.l10n.t("Load more… (+{0})", pageSizeForLabel),
             vscode.TreeItemCollapsibleState.None
           )
         );
       }
       return items;
     } catch {
-      return [emptyLeaf(vscode.l10n.t("gitList.stashListReadFailed"))];
+      return [emptyLeaf(vscode.l10n.t("Failed to read git stash list."))];
     }
   }
 
@@ -1109,7 +1109,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       }
       const anchor = this.fileHistoryAnchorFsPath;
       if (!anchor) {
-        return [emptyLeaf(vscode.l10n.t("gitList.fileHistoryOpenFileHint"))];
+        return [emptyLeaf(vscode.l10n.t("Open a saved file in the editor to see commits that touched it."))];
       }
       const fileRepo = await getGitRoot(path.dirname(anchor));
       if (!fileRepo) {
@@ -1117,7 +1117,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       }
       const rel = path.relative(fileRepo, anchor).split(path.sep).join("/");
       if (!rel || rel.startsWith("..")) {
-        return [emptyLeaf(vscode.l10n.t("gitList.fileHistoryNotInRepo"))];
+        return [emptyLeaf(vscode.l10n.t("Active file is not inside a Git repository."))];
       }
       const scopeKey = `fileHistory:${encodeURIComponent(rel)}`;
       return loadCommits(
@@ -1162,7 +1162,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       for (const key of this.branchRowByName.keys()) {
         this.branchRowByName.delete(key);
       }
-      return [emptyLeaf(vscode.l10n.t("gitList.emptyNoBranches"))];
+      return [emptyLeaf(vscode.l10n.t("(No branches)"))];
     }
     const seen = new Set(rows.map((r) => r.name));
     for (const key of [...this.branchRowByName.keys()]) {
@@ -1205,7 +1205,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       items.push(
         new GitListTreeItem(
           "loadMoreBranches",
-          vscode.l10n.t("gitList.loadMoreBatch", String(pageLabel)),
+          vscode.l10n.t("Load more… (+{0})", String(pageLabel)),
           vscode.TreeItemCollapsibleState.None
         )
       );
@@ -1220,7 +1220,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
     ]);
     if (names.length === 0) {
       this.remoteRowByName.clear();
-      return [emptyLeaf(vscode.l10n.t("gitList.emptyNoRemotes"))];
+      return [emptyLeaf(vscode.l10n.t("(No remotes)"))];
     }
     const seen = new Set(names);
     for (const key of [...this.remoteRowByName.keys()]) {
@@ -1269,7 +1269,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       items.push(
         new GitListTreeItem(
           "loadMoreRemotes",
-          vscode.l10n.t("gitList.loadMoreBatch", String(pageLabel)),
+          vscode.l10n.t("Load more… (+{0})", String(pageLabel)),
           vscode.TreeItemCollapsibleState.None
         )
       );
@@ -1285,7 +1285,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
           this.remoteBranchRowByRef.delete(key);
         }
       }
-      return [emptyLeaf(vscode.l10n.t("gitList.emptyNoRemoteBranches"))];
+      return [emptyLeaf(vscode.l10n.t("(No remote branches)"))];
     }
     const seen = new Set(rows.map((r) => r.name));
     for (const key of [...this.remoteBranchRowByRef.keys()]) {
@@ -1331,7 +1331,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       items.push(
         new GitListTreeItem(
           "loadMoreRemoteBranches",
-          vscode.l10n.t("gitList.loadMoreBatch", String(pageLabel)),
+          vscode.l10n.t("Load more… (+{0})", String(pageLabel)),
           vscode.TreeItemCollapsibleState.None,
           undefined,
           undefined,
@@ -1377,7 +1377,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       this.diffCache.set(key, items);
       return items;
     } catch {
-      return [emptyLeaf(vscode.l10n.t("gitList.diffLoadFailed"))];
+      return [emptyLeaf(vscode.l10n.t("Failed to load diff."))];
     }
   }
 
@@ -1432,7 +1432,7 @@ export class GitListTreeProvider implements vscode.TreeDataProvider<GitListTreeI
       this.diffCache.set(key, items);
       return items;
     } catch {
-      return [emptyLeaf(vscode.l10n.t("gitList.stashDiffLoadFailed"))];
+      return [emptyLeaf(vscode.l10n.t("Failed to load stash diff."))];
     }
   }
 }
@@ -1494,7 +1494,7 @@ function decorateBranchListRow(
   const tip = new vscode.MarkdownString();
   tip.appendMarkdown(`**${row.name}**\n\n\`${row.dateIso}\``);
   if (isUnmerged) {
-    tip.appendMarkdown(`\n\n*${vscode.l10n.t("gitList.branchNotMergedIntoHead")}*`);
+    tip.appendMarkdown(`\n\n*${vscode.l10n.t("Not fully merged into the current HEAD.")}*`);
   }
   tip.isTrusted = false;
   item.tooltip = tip;
@@ -1511,7 +1511,7 @@ function noRepoTreeHintLeaf(): GitListTreeItem {
   if (!cachedNoRepoTreeHintLeaf) {
     cachedNoRepoTreeHintLeaf = new GitListTreeItem(
       "info",
-      vscode.l10n.t("gitList.noRepoTreeHint"),
+      vscode.l10n.t("No Git repository found."),
       vscode.TreeItemCollapsibleState.None
     );
     cachedNoRepoTreeHintLeaf.id = "gitList-hint-no-repo";
@@ -1534,9 +1534,9 @@ function buildCommitTooltip(
 ): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
   const totalFiles = meta.filesAdded + meta.filesDeleted + meta.filesModified;
-  md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipSubject")}** ${subject}\n\n`);
+  md.appendMarkdown(`**${vscode.l10n.t("Subject")}** ${subject}\n\n`);
   md.appendMarkdown(
-    `**${vscode.l10n.t("gitList.commitTooltipChangedFiles")}** ${vscode.l10n.t(
+    `**${vscode.l10n.t("Changed files")}** ${vscode.l10n.t(
       "gitList.commitTooltipChangedFilesDetail",
       totalFiles,
       meta.filesModified,
@@ -1546,23 +1546,23 @@ function buildCommitTooltip(
   );
   if (meta.binaryFiles > 0) {
     md.appendMarkdown(
-      `**${vscode.l10n.t("gitList.commitTooltipBinary")}** ${vscode.l10n.t(
+      `**${vscode.l10n.t("Binary")}** ${vscode.l10n.t(
         "gitList.commitTooltipBinaryCount",
         meta.binaryFiles
       )}\n\n`
     );
   }
   md.appendMarkdown(
-    `**${vscode.l10n.t("gitList.commitTooltipLines")}** ${vscode.l10n.t(
+    `**${vscode.l10n.t("Lines")}** ${vscode.l10n.t(
       "gitList.commitTooltipLinesDetail",
       meta.linesAdded,
       meta.linesRemoved
     )}\n\n`
   );
-  md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipAuthor")}** ${meta.author} <${meta.authorEmail}>\n\n`);
-  md.appendMarkdown(`**${vscode.l10n.t("gitList.commitTooltipAuthorTime")}** ${meta.dateAuthorIso}\n\n`);
+  md.appendMarkdown(`**${vscode.l10n.t("Author")}** ${meta.author} <${meta.authorEmail}>\n\n`);
+  md.appendMarkdown(`**${vscode.l10n.t("Author date")}** ${meta.dateAuthorIso}\n\n`);
   md.appendMarkdown(
-    `**${vscode.l10n.t("gitList.commitTooltipShortHash")}** \`${shortHash}\`　**${vscode.l10n.t("gitList.commitTooltipFullHash")}** \`${meta.fullHash}\``
+    `**${vscode.l10n.t("Short hash")}** \`${shortHash}\`　**${vscode.l10n.t("Full hash")}** \`${meta.fullHash}\``
   );
   return md;
 }
@@ -2088,7 +2088,7 @@ function buildPatchTreeItems(
   entries: ParsedPatchFile[]
 ): GitListTreeItem[] {
   if (entries.length === 0) {
-    return [emptyLeaf(vscode.l10n.t("gitList.emptyNoChanges"))];
+    return [emptyLeaf(vscode.l10n.t("(No changes)"))];
   }
   let truncated = false;
   let list = entries;
@@ -2101,7 +2101,7 @@ function buildPatchTreeItems(
   const appendTruncation = (items: GitListTreeItem[]): GitListTreeItem[] => {
     if (truncated) {
       items.push(
-        new GitListTreeItem("info", vscode.l10n.t("gitList.fileListTruncated"), vscode.TreeItemCollapsibleState.None)
+        new GitListTreeItem("info", vscode.l10n.t("(File list truncated…)"), vscode.TreeItemCollapsibleState.None)
       );
     }
     return items;
@@ -2575,10 +2575,10 @@ async function loadCommits(
       });
       const parsed = parseGitLogWithNumstat(stdout);
       if (parsed.length === 0) {
-        return [emptyLeaf(vscode.l10n.t("gitList.emptyNoCommits"))];
+        return [emptyLeaf(vscode.l10n.t("(No commits)"))];
       }
       participantOpts!.onRecordAuthors(parsed.map((r) => normalizeParticipantName(r.author)));
-      return [emptyLeaf(vscode.l10n.t("gitList.participantFilterPageEmpty"))];
+      return [emptyLeaf(vscode.l10n.t("(No commits by included authors in this batch — try Load more or change the filter.)"))];
     }
 
     const useParticipantScan = Boolean(allow && allow.size > 0 && participantOpts);
@@ -2637,7 +2637,7 @@ async function loadCommits(
       });
       const parsed = parseGitLogWithNumstat(stdout);
       if (parsed.length === 0) {
-        return [emptyLeaf(vscode.l10n.t("gitList.emptyNoCommits"))];
+        return [emptyLeaf(vscode.l10n.t("(No commits)"))];
       }
       participantOpts?.onRecordAuthors(parsed.map((r) => normalizeParticipantName(r.author)));
       hasMore = parsed.length > displayLimit;
@@ -2647,7 +2647,7 @@ async function loadCommits(
     }
 
     if (slice.length === 0 && !rawHadCommits) {
-      return [emptyLeaf(vscode.l10n.t("gitList.emptyNoCommits"))];
+      return [emptyLeaf(vscode.l10n.t("(No commits)"))];
     }
 
     const items: GitListTreeItem[] =
@@ -2657,14 +2657,14 @@ async function loadCommits(
 
     if (slice.length === 0 && rawHadCommits) {
       items.length = 0;
-      items.push(emptyLeaf(vscode.l10n.t("gitList.participantFilterPageEmpty")));
+      items.push(emptyLeaf(vscode.l10n.t("(No commits by included authors in this batch — try Load more or change the filter.)")));
     }
     if (hasMore) {
       if (fileHistoryRelPath !== undefined) {
         items.push(
           new GitListTreeItem(
             "loadMoreFileHistoryCommits",
-            vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
+            vscode.l10n.t("Load more… (+{0})", pageSizeForLabel),
             vscode.TreeItemCollapsibleState.None,
             undefined,
             undefined,
@@ -2686,7 +2686,7 @@ async function loadCommits(
         items.push(
           new GitListTreeItem(
             "loadMoreBranchCommits",
-            vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
+            vscode.l10n.t("Load more… (+{0})", pageSizeForLabel),
             vscode.TreeItemCollapsibleState.None,
             undefined,
             undefined,
@@ -2708,7 +2708,7 @@ async function loadCommits(
         items.push(
           new GitListTreeItem(
             "loadMoreCommits",
-            vscode.l10n.t("gitList.loadMoreBatch", pageSizeForLabel),
+            vscode.l10n.t("Load more… (+{0})", pageSizeForLabel),
             vscode.TreeItemCollapsibleState.None
           )
         );
@@ -2717,6 +2717,6 @@ async function loadCommits(
     return items;
 
   } catch {
-    return [emptyLeaf(vscode.l10n.t("gitList.gitLogReadFailed"))];
+    return [emptyLeaf(vscode.l10n.t("Failed to read git log."))];
   }
 }

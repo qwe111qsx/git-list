@@ -57,7 +57,7 @@ function showGitErrorMessage(summaryL10nKey: string, err: unknown): void {
   const summary = vscode.l10n.t(summaryL10nKey);
   const stamp = new Date().toISOString();
   gitListOutput?.appendLine(`\n━━ ${stamp} ${summary} ━━\n${detail}\n`);
-  const openLog = vscode.l10n.t("gitList.openOutputLog");
+  const openLog = vscode.l10n.t("Open Git List log");
   const full = `${summary}\n\n${detail}`;
   const toast =
     full.length > 3200 ? `${summary}\n\n${detail.slice(0, 2800)}\n…` : full;
@@ -152,7 +152,7 @@ async function readCurrentBranchName(repo: string): Promise<string | undefined> 
     if (abbr && abbr !== "HEAD") {
       return abbr;
     }
-    return vscode.l10n.t("gitList.headDetachedBranchLabel");
+    return vscode.l10n.t("(detached HEAD)");
   } catch {
     return undefined;
   }
@@ -218,7 +218,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.initRepository", async () => {
       const folder = vscode.workspace.workspaceFolders?.[0];
       if (!folder) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.openFolderHint"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Open a folder to use Git List."));
         return;
       }
       const existing = await resolveWorkspaceGitRoot();
@@ -231,11 +231,11 @@ export function activate(context: vscode.ExtensionContext): void {
       try {
         await initWorkspaceGitRepository(folder.uri);
         invalidateWorkspaceGitRootCache();
-        void vscode.window.showInformationMessage(vscode.l10n.t("gitList.initRepoDone", cwd));
+        void vscode.window.showInformationMessage(vscode.l10n.t("Git repository initialized in {0}.", cwd));
         await syncWorkspaceGitRepoContext();
         provider.refresh();
       } catch (err) {
-        showGitErrorMessage("gitList.initRepoFailed", err);
+        showGitErrorMessage("Could not initialize Git repository", err);
       }
     })
   );
@@ -286,13 +286,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.stashAllIncludeUntracked", async () => {
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       const message = await vscode.window.showInputBox({
-        title: vscode.l10n.t("gitList.stashAllUntrackedTitle"),
-        prompt: vscode.l10n.t("gitList.stashAllUntrackedPrompt"),
-        placeHolder: vscode.l10n.t("gitList.stashAllUntrackedPlaceholder"),
+        title: vscode.l10n.t("Stash — include untracked"),
+        prompt: vscode.l10n.t("Optional stash description (git stash push -u -m …). Leave empty to let Git choose the message."),
+        placeHolder: vscode.l10n.t("e.g. WIP before switching branch"),
         ignoreFocusOut: true,
       });
       if (message === undefined) {
@@ -308,14 +308,14 @@ export function activate(context: vscode.ExtensionContext): void {
           cwd: repo,
           maxBuffer: 1024 * 1024,
         });
-        void vscode.window.showInformationMessage(vscode.l10n.t("gitList.stashAllUntrackedDone"));
+        void vscode.window.showInformationMessage(vscode.l10n.t("Stash created (tracked + untracked)."));
         provider.refreshStashList();
         await vscode.commands.executeCommand("git.refresh").then(
           () => undefined,
           () => undefined
         );
       } catch (err) {
-        showGitErrorMessage("gitList.stashAllUntrackedFailed", err);
+        showGitErrorMessage("Could not stash (include untracked)", err);
       }
     })
   );
@@ -327,7 +327,7 @@ export function activate(context: vscode.ExtensionContext): void {
   async function runShowRepoGitStatus(): Promise<void> {
     const repo = await resolveWorkspaceGitRoot();
     if (!repo) {
-      void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+      void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
       return;
     }
     const ch = gitListOutput!;
@@ -348,7 +348,7 @@ export function activate(context: vscode.ExtensionContext): void {
         cwd: repo,
         maxBuffer: 4096,
       });
-      state += `\n${vscode.l10n.t("gitList.repoStateMergeInProgress")}\n`;
+      state += `\n${vscode.l10n.t("[State] Merge in progress (MERGE_HEAD). Use More → Abort merge on the view title to cancel.")}\n`;
     } catch {
       /* not merging */
     }
@@ -357,7 +357,7 @@ export function activate(context: vscode.ExtensionContext): void {
         cwd: repo,
         maxBuffer: 4096,
       });
-      state += `\n${vscode.l10n.t("gitList.repoStateRebaseInProgress")}\n`;
+      state += `\n${vscode.l10n.t("[State] Rebase in progress (REBASE_HEAD). Use More → Abort rebase on the view title to cancel.")}\n`;
     } catch {
       /* not rebasing */
     }
@@ -366,7 +366,7 @@ export function activate(context: vscode.ExtensionContext): void {
         cwd: repo,
         maxBuffer: 4096,
       });
-      state += `\n${vscode.l10n.t("gitList.repoStateCherryPickInProgress")}\n`;
+      state += `\n${vscode.l10n.t("[State] Cherry-pick in progress (CHERRY_PICK_HEAD). Use More → Abort cherry-pick on the view title to cancel.")}\n`;
     } catch {
       /* not cherry-picking */
     }
@@ -374,7 +374,7 @@ export function activate(context: vscode.ExtensionContext): void {
       ch.appendLine(state.trimEnd());
     }
     ch.show(true);
-    void vscode.window.showInformationMessage(vscode.l10n.t("gitList.repoStatusOpened"));
+    void vscode.window.showInformationMessage(vscode.l10n.t("Full output is in Output → Git List."));
   }
 
   async function isCherryPickInProgress(repo: string): Promise<boolean> {
@@ -392,11 +392,11 @@ export function activate(context: vscode.ExtensionContext): void {
   async function runAbortMerge(): Promise<void> {
     const repo = await resolveWorkspaceGitRoot();
     if (!repo) {
-      void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+      void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
       return;
     }
     if (await isCherryPickInProgress(repo)) {
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.useAbortCherryPickInstead"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("A cherry-pick is in progress. Use More → Abort cherry-pick instead of abort merge."));
       return;
     }
     try {
@@ -405,12 +405,12 @@ export function activate(context: vscode.ExtensionContext): void {
         maxBuffer: 4096,
       });
     } catch {
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.noMergeInProgress"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("No merge in progress."));
       return;
     }
-    const confirm = vscode.l10n.t("gitList.abortMergeConfirmButton");
+    const confirm = vscode.l10n.t("Abort merge");
     const picked = await vscode.window.showWarningMessage(
-      vscode.l10n.t("gitList.abortMergeConfirmIntro"),
+      vscode.l10n.t("Abort the current merge? Working tree changes from the merge will be undone (git merge --abort)."),
       { modal: true },
       confirm
     );
@@ -419,17 +419,17 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     try {
       await execFileAsync("git", ["merge", "--abort"], { cwd: repo, maxBuffer: 1024 * 1024 });
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.abortMergeDone"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("Merge aborted."));
       provider.refresh();
     } catch (err) {
-      showGitErrorMessage("gitList.abortMergeFailed", err);
+      showGitErrorMessage("Could not abort merge", err);
     }
   }
 
   async function runAbortRebase(): Promise<void> {
     const repo = await resolveWorkspaceGitRoot();
     if (!repo) {
-      void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+      void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
       return;
     }
     try {
@@ -438,12 +438,12 @@ export function activate(context: vscode.ExtensionContext): void {
         maxBuffer: 4096,
       });
     } catch {
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.noRebaseInProgress"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("No rebase in progress."));
       return;
     }
-    const confirm = vscode.l10n.t("gitList.abortRebaseConfirmButton");
+    const confirm = vscode.l10n.t("Abort rebase");
     const picked = await vscode.window.showWarningMessage(
-      vscode.l10n.t("gitList.abortRebaseConfirmIntro"),
+      vscode.l10n.t("Abort the current rebase? (git rebase --abort)"),
       { modal: true },
       confirm
     );
@@ -452,26 +452,26 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     try {
       await execFileAsync("git", ["rebase", "--abort"], { cwd: repo, maxBuffer: 1024 * 1024 });
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.abortRebaseDone"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("Rebase aborted."));
       provider.refresh();
     } catch (err) {
-      showGitErrorMessage("gitList.abortRebaseFailed", err);
+      showGitErrorMessage("Could not abort rebase", err);
     }
   }
 
   async function runAbortCherryPick(): Promise<void> {
     const repo = await resolveWorkspaceGitRoot();
     if (!repo) {
-      void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+      void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
       return;
     }
     if (!(await isCherryPickInProgress(repo))) {
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.noCherryPickInProgress"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("No cherry-pick in progress."));
       return;
     }
-    const confirm = vscode.l10n.t("gitList.abortCherryPickConfirmButton");
+    const confirm = vscode.l10n.t("Abort cherry-pick");
     const picked = await vscode.window.showWarningMessage(
-      vscode.l10n.t("gitList.abortCherryPickConfirmIntro"),
+      vscode.l10n.t("Abort the current cherry-pick? Working tree changes from the cherry-pick will be undone (git cherry-pick --abort)."),
       { modal: true },
       confirm
     );
@@ -480,10 +480,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     try {
       await execFileAsync("git", ["cherry-pick", "--abort"], { cwd: repo, maxBuffer: 1024 * 1024 });
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.abortCherryPickDone"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("Cherry-pick aborted."));
       provider.refresh();
     } catch (err) {
-      showGitErrorMessage("gitList.abortCherryPickFailed", err);
+      showGitErrorMessage("Could not abort cherry-pick", err);
     }
   }
 
@@ -502,14 +502,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.openBranchesMoreActions", async () => {
       const items: BranchMorePick[] = [
         {
-          label: `$(trash) ${vscode.l10n.t("gitList.branchesMoreDeleteOldTitle")}`,
-          description: vscode.l10n.t("gitList.branchesMoreDeleteOldDescription"),
+          label: `$(trash) ${vscode.l10n.t("Delete local branches older than 6 months")}`,
+          description: vscode.l10n.t("Tip commit older than 6 months; git branch -d each"),
           _action: "deleteOld",
         },
       ];
       const picked = await vscode.window.showQuickPick(items, {
-        title: vscode.l10n.t("gitList.branchesMorePickTitle"),
-        placeHolder: vscode.l10n.t("gitList.branchesMorePickPlaceholder"),
+        title: vscode.l10n.t("Branches"),
+        placeHolder: vscode.l10n.t("Choose an action"),
       });
       if (picked?._action === "deleteOld") {
         await vscode.commands.executeCommand("gitList.deleteBranchesOlderThanSixMonths");
@@ -532,19 +532,19 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const ctx = await provider.resolveCommitListFilterContext(target);
       if (!ctx) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.commitListMoreUnavailable"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Open a repo file for File History first, or select Commits / a branch row."));
         return;
       }
       const picks: CommitListMorePick[] = [
         {
-          label: `$(filter) ${vscode.l10n.t("gitList.commitListFilterParticipantsTitle")}`,
-          description: vscode.l10n.t("gitList.commitListFilterParticipantsDesc"),
+          label: `$(filter) ${vscode.l10n.t("Filter by author…")}`,
+          description: vscode.l10n.t("Only commits by checked authors appear; others stay out until you include them here. All checked = clear filter."),
           _action: "participants",
         },
       ];
       const picked = await vscode.window.showQuickPick(picks, {
-        title: vscode.l10n.t("gitList.commitListMorePickTitle"),
-        placeHolder: vscode.l10n.t("gitList.commitListMorePickPlaceholder"),
+        title: vscode.l10n.t("Commit list"),
+        placeHolder: vscode.l10n.t("Choose an action"),
       });
       if (!picked || (picked as CommitListMorePick)._action !== "participants") {
         return;
@@ -566,14 +566,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.refreshRemotes", async () => {
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       try {
         await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
-            title: vscode.l10n.t("gitList.fetchAllRemotesProgressTitle"),
+            title: vscode.l10n.t("Fetching all remotes…"),
             cancellable: false,
           },
           async () => {
@@ -585,7 +585,7 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         provider.refreshRemotesList();
       } catch (err) {
-        showGitErrorMessage("gitList.fetchAllRemotesFailed", err);
+        showGitErrorMessage("Could not fetch all remotes", err);
       }
     })
   );
@@ -598,7 +598,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       const rn = target.remoteName;
@@ -606,7 +606,7 @@ export function activate(context: vscode.ExtensionContext): void {
         await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
-            title: vscode.l10n.t("gitList.fetchOneRemoteProgressTitle", rn),
+            title: vscode.l10n.t("Fetching {0}…", rn),
             cancellable: false,
           },
           async () => {
@@ -618,7 +618,7 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         provider.refreshRemoteBranchesList(target);
       } catch (err) {
-        showGitErrorMessage("gitList.fetchOneRemoteFailed", err);
+        showGitErrorMessage("Could not fetch remote", err);
       }
     })
   );
@@ -627,7 +627,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.clearAuthorColors", async () => {
       await clearAuthorStylesStore(context);
       provider.refresh();
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.authorColorsCleared"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("Saved author icon colors cleared. Expand Commits again to reassign."));
     })
   );
 
@@ -669,12 +669,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.applyStash", async (item?: GitListTreeItem) => {
       const target = item ?? treeView.selection[0];
       if (!target || target.kind !== "stash" || !target.stashRef) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.stashActionPick"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Right-click a stash entry in the list."));
         return;
       }
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       try {
@@ -683,11 +683,11 @@ export function activate(context: vscode.ExtensionContext): void {
           maxBuffer: 10 * 1024 * 1024,
         });
         void vscode.window.showInformationMessage(
-          `${vscode.l10n.t("gitList.applyStashDoneIntro")}\n${target.stashRef}`
+          `${vscode.l10n.t("Applied stash:")}\n${target.stashRef}`
         );
         provider.refresh();
       } catch (err) {
-        showGitErrorMessage("gitList.applyStashFailed", err);
+        showGitErrorMessage("Apply stash failed", err);
       }
     })
   );
@@ -696,16 +696,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.dropStash", async (item?: GitListTreeItem) => {
       const target = item ?? treeView.selection[0];
       if (!target || target.kind !== "stash" || !target.stashRef) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.stashActionPick"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Right-click a stash entry in the list."));
         return;
       }
       const stashTitle =
         typeof target.label === "string"
           ? target.label
           : (target.label?.label ?? target.stashRef);
-      const confirm = vscode.l10n.t("gitList.dropStashConfirmButton");
+      const confirm = vscode.l10n.t("Drop");
       const picked = await vscode.window.showWarningMessage(
-        `${vscode.l10n.t("gitList.dropStashConfirmIntro")}\n\n${stashTitle}`,
+        `${vscode.l10n.t("Permanently drop this stash? This cannot be undone.")}\n\n${stashTitle}`,
         { modal: true },
         confirm
       );
@@ -714,7 +714,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       try {
@@ -723,11 +723,11 @@ export function activate(context: vscode.ExtensionContext): void {
           maxBuffer: 1024 * 1024,
         });
         void vscode.window.showInformationMessage(
-          `${vscode.l10n.t("gitList.dropStashDoneIntro")}\n${stashTitle}`
+          `${vscode.l10n.t("Dropped stash:")}\n${stashTitle}`
         );
         provider.notifyStashDropped(target.stashRef, target.hash);
       } catch (err) {
-        showGitErrorMessage("gitList.dropStashFailed", err);
+        showGitErrorMessage("Drop stash failed", err);
       }
     })
   );
@@ -736,17 +736,17 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.deleteBranch", async (item?: GitListTreeItem) => {
       const target = item ?? treeView.selection[0];
       if (!target || target.kind !== "branch" || !target.branchName) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.deleteBranchPick"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Right-click a branch in the Branches list."));
         return;
       }
       if (target.branchSource === "remote") {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.deleteBranchRemoteNotSupported"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Delete applies to local branches only. Switch to the branch list under Branches, or delete the remote on the server."));
         return;
       }
       const branchName = target.branchName;
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       let currentHead: string;
@@ -757,18 +757,18 @@ export function activate(context: vscode.ExtensionContext): void {
         });
         currentHead = stdout.trim();
       } catch {
-        void vscode.window.showErrorMessage(vscode.l10n.t("gitList.deleteBranchReadHeadFailed"));
+        void vscode.window.showErrorMessage(vscode.l10n.t("Could not read current branch."));
         return;
       }
       if (currentHead === branchName) {
         void vscode.window.showWarningMessage(
-          vscode.l10n.t("gitList.deleteBranchCurrent", branchName)
+          vscode.l10n.t("Cannot delete the checked-out branch ({0}).", branchName)
         );
         return;
       }
-      const confirm = vscode.l10n.t("gitList.deleteBranchConfirmButton");
+      const confirm = vscode.l10n.t("Delete");
       const picked = await vscode.window.showWarningMessage(
-        vscode.l10n.t("gitList.deleteBranchConfirmIntro", branchName),
+        vscode.l10n.t("Delete local branch “{0}”? This runs: git branch -d", branchName),
         { modal: true },
         confirm
       );
@@ -781,11 +781,11 @@ export function activate(context: vscode.ExtensionContext): void {
           maxBuffer: 1024 * 1024,
         });
         void vscode.window.showInformationMessage(
-          vscode.l10n.t("gitList.deleteBranchDone", branchName)
+          vscode.l10n.t("Deleted branch {0}.", branchName)
         );
         provider.notifyBranchDeleted(branchName);
       } catch (err) {
-        showGitErrorMessage("gitList.deleteBranchFailed", err);
+        showGitErrorMessage("Could not delete branch", err);
       }
     })
   );
@@ -794,12 +794,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.checkoutBranch", async (item?: GitListTreeItem) => {
       const target = item ?? treeView.selection[0];
       if (!target || target.kind !== "branch" || !target.branchName) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.checkoutBranchPick"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Right-click a branch row under Branches or Remotes."));
         return;
       }
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       let head: string;
@@ -810,7 +810,7 @@ export function activate(context: vscode.ExtensionContext): void {
         });
         head = stdout.trim();
       } catch {
-        void vscode.window.showErrorMessage(vscode.l10n.t("gitList.deleteBranchReadHeadFailed"));
+        void vscode.window.showErrorMessage(vscode.l10n.t("Could not read current branch."));
         return;
       }
       const name = target.branchName;
@@ -818,7 +818,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (target.branchSource !== "remote") {
           if (head === name) {
             void vscode.window.showInformationMessage(
-              vscode.l10n.t("gitList.checkoutBranchAlreadyOn", name)
+              vscode.l10n.t("Already on branch “{0}”.", name)
             );
             return;
           }
@@ -837,7 +837,7 @@ export function activate(context: vscode.ExtensionContext): void {
             const shortName = name.slice(slash + 1);
             if (head === shortName) {
               void vscode.window.showInformationMessage(
-                vscode.l10n.t("gitList.checkoutBranchAlreadyOn", shortName)
+                vscode.l10n.t("Already on branch “{0}”.", shortName)
               );
               return;
             }
@@ -855,11 +855,11 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         }
         void vscode.window.showInformationMessage(
-          vscode.l10n.t("gitList.checkoutBranchDone", name)
+          vscode.l10n.t("Switched to “{0}”.", name)
         );
         provider.refresh();
       } catch (err) {
-        showGitErrorMessage("gitList.checkoutBranchFailed", err);
+        showGitErrorMessage("Could not switch branch", err);
       }
     })
   );
@@ -868,13 +868,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.mergeBranchIntoHead", async (item?: GitListTreeItem) => {
       const target = item ?? treeView.selection[0];
       if (!target || target.kind !== "branch" || !target.branchName) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.mergeBranchPick"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Right-click a branch that is not fully merged (red branch icon)."));
         return;
       }
       const ref = target.branchName;
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       let head: string;
@@ -885,20 +885,20 @@ export function activate(context: vscode.ExtensionContext): void {
         });
         head = stdout.trim();
       } catch {
-        void vscode.window.showErrorMessage(vscode.l10n.t("gitList.deleteBranchReadHeadFailed"));
+        void vscode.window.showErrorMessage(vscode.l10n.t("Could not read current branch."));
         return;
       }
       if (head === "HEAD") {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.mergeBranchDetachedHead"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Cannot merge while in detached HEAD. Check out a branch first."));
         return;
       }
       if (target.branchSource !== "remote" && ref === head) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.mergeBranchSameAsHead", ref));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Already on “{0}”; nothing to merge from the same branch.", ref));
         return;
       }
-      const confirm = vscode.l10n.t("gitList.mergeBranchConfirmButton");
+      const confirm = vscode.l10n.t("Merge");
       const picked = await vscode.window.showWarningMessage(
-        vscode.l10n.t("gitList.mergeBranchConfirmIntro", ref, head),
+        vscode.l10n.t("Merge “{0}” into the current branch “{1}”? This runs: git merge {0}", ref, head),
         { modal: true },
         confirm
       );
@@ -910,10 +910,10 @@ export function activate(context: vscode.ExtensionContext): void {
           cwd: repo,
           maxBuffer: 50 * 1024 * 1024,
         });
-        void vscode.window.showInformationMessage(vscode.l10n.t("gitList.mergeBranchDone", ref));
+        void vscode.window.showInformationMessage(vscode.l10n.t("Merged “{0}” into the current branch.", ref));
         provider.refresh();
       } catch (err) {
-        showGitErrorMessage("gitList.mergeBranchFailed", err);
+        showGitErrorMessage("Merge failed", err);
       }
     })
   );
@@ -922,7 +922,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.deleteBranchesOlderThanSixMonths", async () => {
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       let currentHead: string;
@@ -933,7 +933,7 @@ export function activate(context: vscode.ExtensionContext): void {
         });
         currentHead = stdout.trim();
       } catch {
-        void vscode.window.showErrorMessage(vscode.l10n.t("gitList.deleteBranchReadHeadFailed"));
+        void vscode.window.showErrorMessage(vscode.l10n.t("Could not read current branch."));
         return;
       }
       const cutoff = cutoffDateMonthsAgo(DELETE_BRANCHES_OLDER_THAN_MONTHS);
@@ -942,12 +942,12 @@ export function activate(context: vscode.ExtensionContext): void {
         .filter((r) => r.name !== currentHead && r.tipDate < cutoff)
         .map((r) => r.name);
       if (toDelete.length === 0) {
-        void vscode.window.showInformationMessage(vscode.l10n.t("gitList.deleteOldBranchesNone"));
+        void vscode.window.showInformationMessage(vscode.l10n.t("No local branches match (tip commit older than 6 months, excluding the current branch)."));
         return;
       }
-      const confirmBtn = vscode.l10n.t("gitList.deleteOldBranchesConfirmButton");
+      const confirmBtn = vscode.l10n.t("Delete");
       const picked = await vscode.window.showWarningMessage(
-        vscode.l10n.t("gitList.deleteOldBranchesConfirm", String(toDelete.length)),
+        vscode.l10n.t("Delete {0} local branch(es) whose tip commit is older than 6 months? The current branch is never removed. Each branch is deleted with git branch -d; unmerged branches will be skipped and listed afterward.", String(toDelete.length)),
         { modal: true },
         confirmBtn
       );
@@ -957,7 +957,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: vscode.l10n.t("gitList.deleteOldBranchesProgressTitle"),
+          title: vscode.l10n.t("Deleting branches"),
           cancellable: false,
         },
         async (progress) => {
@@ -987,7 +987,7 @@ export function activate(context: vscode.ExtensionContext): void {
           provider.notifyBranchesDeleted(deleted);
           if (failed.length === 0) {
             void vscode.window.showInformationMessage(
-              vscode.l10n.t("gitList.deleteOldBranchesSummary", String(deleted.length))
+              vscode.l10n.t("Deleted {0} branch(es).", String(deleted.length))
             );
           } else {
             const sample = failed.slice(0, 8).join(", ");
@@ -1010,25 +1010,25 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.createBranchFromCommit", async (item?: GitListTreeItem) => {
       const target = item ?? treeView.selection[0];
       if (!target || target.kind !== "commit" || !target.commitMeta?.fullHash) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.createBranchPickCommit"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Right-click a commit in the list."));
         return;
       }
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       const full = target.commitMeta.fullHash.trim();
       const defaultName = full.length > 7 ? full.slice(0, 7) : full;
       const branchName = await vscode.window.showInputBox({
-        title: vscode.l10n.t("gitList.createBranchInputTitle"),
-        prompt: vscode.l10n.t("gitList.createBranchInputPrompt"),
+        title: vscode.l10n.t("New branch name"),
+        prompt: vscode.l10n.t("Branch name (default is the short commit hash). Press Enter to create and check out."),
         value: defaultName,
         valueSelection: [0, defaultName.length],
         validateInput: (v) => {
           const t = v.trim();
           if (!t) {
-            return vscode.l10n.t("gitList.createBranchInputEmpty");
+            return vscode.l10n.t("Branch name cannot be empty.");
           }
           return undefined;
         },
@@ -1043,11 +1043,11 @@ export function activate(context: vscode.ExtensionContext): void {
           maxBuffer: 1024 * 1024,
         });
         void vscode.window.showInformationMessage(
-          vscode.l10n.t("gitList.createBranchDone", name)
+          vscode.l10n.t("Created and checked out branch {0}.", name)
         );
         provider.refresh();
       } catch (err) {
-        showGitErrorMessage("gitList.createBranchFailed", err);
+        showGitErrorMessage("Could not create branch", err);
       }
     })
   );
@@ -1056,22 +1056,22 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.cherryPickCommit", async (item?: GitListTreeItem) => {
       const target = item ?? treeView.selection[0];
       if (!target || target.kind !== "commit" || !target.commitMeta?.fullHash) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cherryPickPickCommit"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Right-click a commit in the list."));
         return;
       }
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       const fullHash = target.commitMeta.fullHash.trim();
       const headRef = await readCurrentBranchHeadRef(repo);
       if (!headRef) {
-        void vscode.window.showErrorMessage(vscode.l10n.t("gitList.deleteBranchReadHeadFailed"));
+        void vscode.window.showErrorMessage(vscode.l10n.t("Could not read current branch."));
         return;
       }
       if (headRef === "HEAD") {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cherryPickDetachedHead"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Cannot cherry-pick while in detached HEAD. Check out a branch first."));
         return;
       }
       const branchName = (await readCurrentBranchName(repo)) ?? headRef;
@@ -1081,20 +1081,20 @@ export function activate(context: vscode.ExtensionContext): void {
           maxBuffer: 4096,
         });
         if (headHashOut.trim() === fullHash) {
-          void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cherryPickAlreadyHead"));
+          void vscode.window.showWarningMessage(vscode.l10n.t("This commit is already the current HEAD."));
           return;
         }
       } catch {
-        void vscode.window.showErrorMessage(vscode.l10n.t("gitList.deleteBranchReadHeadFailed"));
+        void vscode.window.showErrorMessage(vscode.l10n.t("Could not read current branch."));
         return;
       }
       if (await isCommitAncestorOfHead(repo, fullHash)) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cherryPickAlreadyOnBranch"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("This commit is already in the current branch history."));
         return;
       }
       const subject = typeof target.label === "string" ? target.label : String(target.label);
       const shortHash = fullHash.length > 7 ? fullHash.slice(0, 7) : fullHash;
-      const confirmBtn = vscode.l10n.t("gitList.cherryPickConfirmButton");
+      const confirmBtn = vscode.l10n.t("Cherry-pick");
       const picked = await vscode.window.showWarningMessage(
         vscode.l10n.t(
           "gitList.cherryPickConfirmIntro",
@@ -1115,11 +1115,11 @@ export function activate(context: vscode.ExtensionContext): void {
           maxBuffer: 1024 * 1024,
         });
         void vscode.window.showInformationMessage(
-          vscode.l10n.t("gitList.cherryPickDone", shortHash, branchName)
+          vscode.l10n.t("Cherry-picked {0} onto {1}.", shortHash, branchName)
         );
         provider.refresh();
       } catch (err) {
-        showGitErrorMessage("gitList.cherryPickFailed", err);
+        showGitErrorMessage("Cherry-pick failed", err);
       }
     })
   );
@@ -1176,17 +1176,17 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitList.copyHeadBranchName", async () => {
       const repo = await resolveWorkspaceGitRoot();
       if (!repo) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.noGitRepo"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("No Git repository found for this workspace."));
         return;
       }
       const branchName = await readCurrentBranchName(repo);
       if (!branchName) {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.copyHeadReadFailed"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Could not read the current branch name."));
         return;
       }
       await vscode.env.clipboard.writeText(branchName);
       void vscode.window.showInformationMessage(
-        vscode.l10n.t("gitList.copyHeadBranchDone", branchName)
+        vscode.l10n.t("Copied branch name: {0}", branchName)
       );
     })
   );
@@ -1207,7 +1207,7 @@ export function activate(context: vscode.ExtensionContext): void {
         try {
           await openCommitFileDiff(repo, relPath, commitHash);
         } catch {
-          void vscode.window.showWarningMessage(vscode.l10n.t("gitList.cursorLineOpenCommitDiffFailed"));
+          void vscode.window.showWarningMessage(vscode.l10n.t("Could not open the commit diff for this file."));
         }
       }
     )
@@ -1270,7 +1270,7 @@ export function activate(context: vscode.ExtensionContext): void {
       try {
         await vscode.window.showTextDocument(uri, { preview: false });
       } catch {
-        void vscode.window.showWarningMessage(vscode.l10n.t("gitList.openWorkingTreeFailed"));
+        void vscode.window.showWarningMessage(vscode.l10n.t("Could not open the working tree file (missing or not on disk)."));
       }
     })
   );
@@ -1315,11 +1315,11 @@ export function activate(context: vscode.ExtensionContext): void {
           });
           return;
         } catch {
-          void vscode.window.showWarningMessage(vscode.l10n.t("gitList.openWorkingTreeFailed"));
+          void vscode.window.showWarningMessage(vscode.l10n.t("Could not open the working tree file (missing or not on disk)."));
           return;
         }
       }
-      void vscode.window.showInformationMessage(vscode.l10n.t("gitList.openWorkingTreeNoGitListDoc"));
+      void vscode.window.showInformationMessage(vscode.l10n.t("No Git List diff pane with a file path is visible. Open a diff from Git List first."));
     }),
     vscode.window.onDidChangeActiveTextEditor(() => syncGitListDiffContext()),
     vscode.window.onDidChangeVisibleTextEditors(() => syncGitListDiffContext())

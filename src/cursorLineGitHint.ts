@@ -120,7 +120,7 @@ function shortHashDisplay(full: string): string {
  */
 async function getNameRevInlineLabel(repo: string, commitHash: string): Promise<string> {
   if (isAllZeroSha(commitHash)) {
-    return vscode.l10n.t("gitList.cursorLineGitHintUncommitted");
+    return vscode.l10n.t("Uncommitted");
   }
   const key = `${repo}\0name-rev\0${commitHash}`;
   const now = Date.now();
@@ -177,17 +177,17 @@ function buildBlameHoverMessage(
   md.isTrusted = true;
   const short = shortHashDisplay(blame.commitHash);
   md.appendMarkdown(
-    `- **${vscode.l10n.t("gitList.cursorLineGitHintHoverShortHash")}** \`${short}\`\n` +
-      `- **${vscode.l10n.t("gitList.cursorLineGitHintHoverLongHash")}** \`${blame.commitHash}\`\n\n`
+    `- **${vscode.l10n.t("Short")}** \`${short}\`\n` +
+      `- **${vscode.l10n.t("Full")}** \`${blame.commitHash}\`\n\n`
   );
-  const msg = (fullMessage || blame.summary).trim() || vscode.l10n.t("gitList.cursorLineGitHintNoSubject");
-  md.appendMarkdown(`**${vscode.l10n.t("gitList.cursorLineGitHintHoverCommitMessage")}**\n\n`);
+  const msg = (fullMessage || blame.summary).trim() || vscode.l10n.t("(no subject)");
+  md.appendMarkdown(`**${vscode.l10n.t("Commit message")}**\n\n`);
   md.appendText(msg);
 
   const payload = { repo, relPath: relPosix, commitHash: blame.commitHash };
   const args = encodeURIComponent(JSON.stringify([payload]));
   md.appendMarkdown(
-    `\n\n[${vscode.l10n.t("gitList.cursorLineGitHintPreviewDiff")}](command:gitList.openCursorLineCommitFileDiff?${args})`
+    `\n\n[${vscode.l10n.t("Preview this file’s diff in this commit")}](command:gitList.openCursorLineCommitFileDiff?${args})`
   );
   return md;
 }
@@ -195,7 +195,7 @@ function buildBlameHoverMessage(
 function buildUncommittedHover(): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
   md.isTrusted = true;
-  md.appendMarkdown(vscode.l10n.t("gitList.cursorLineGitHintHoverUncommitted"));
+  md.appendMarkdown(vscode.l10n.t("This line is not yet committed (working tree or index)."));
   return md;
 }
 
@@ -206,7 +206,7 @@ async function resolveInlineBranchAndHover(
 ): Promise<{ primaryBranch: string; hover: vscode.MarkdownString }> {
   if (isAllZeroSha(blame.commitHash)) {
     return {
-      primaryBranch: vscode.l10n.t("gitList.cursorLineGitHintUncommitted"),
+      primaryBranch: vscode.l10n.t("Uncommitted"),
       hover: buildUncommittedHover(),
     };
   }
